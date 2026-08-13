@@ -13,8 +13,8 @@ $Version = '0.1.0'
 
 # Per-arch SHA-256 of the Windows release binaries (filled per release).
 $Sha256 = @{
-    'amd64' = ''
-    'arm64' = ''
+    'amd64' = '7abb7ae3ba0a45cc4c19c3382a47d05948967fcb228b77c9040b19ff5247951f'
+    'arm64' = '4363b5a61cd0d0cbe8c84b0ea803748063a3141adb6af2ee0e9e4b0d1c8004bf'
 }
 
 $Stdin = [Console]::In.ReadToEnd()

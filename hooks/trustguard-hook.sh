@@ -16,12 +16,12 @@ BASE_URL="${TRUSTGUARD_CURSOR_DOWNLOAD_BASE:-https://github.com/NeuralTrust/trus
 BIN_DIR="${TRUSTGUARD_CURSOR_BIN_DIR:-$HOME/.trustguard/bin}"
 
 # Per-platform SHA-256 of the release binaries (filled per release).
-SHA256_darwin_amd64=""
-SHA256_darwin_arm64=""
-SHA256_linux_amd64=""
-SHA256_linux_arm64=""
-SHA256_windows_amd64=""
-SHA256_windows_arm64=""
+SHA256_darwin_amd64="ee5c09b8de148bfca721b2ea3677816c9a27f1e9b9277ff6d7e81c73f0584b8a"
+SHA256_darwin_arm64="83b31f2bd15bf4dce75b55f3d8b99b01be9ce7dfd30d733fbcdc62ad6c88db16"
+SHA256_linux_amd64="827b533cf43bcd270ffb16bb5d054b08c8bc3079537cab661e416a948474fab6"
+SHA256_linux_arm64="5303bf241d1fabc6e7aef7da45d9092d9683157c5c840a6809184ed01b11f129"
+SHA256_windows_amd64="7abb7ae3ba0a45cc4c19c3382a47d05948967fcb228b77c9040b19ff5247951f"
+SHA256_windows_arm64="4363b5a61cd0d0cbe8c84b0ea803748063a3141adb6af2ee0e9e4b0d1c8004bf"
 
 fail_open() {
     echo "trustguard-cursor bootstrap: $1 — allowing without evaluation" >&2
