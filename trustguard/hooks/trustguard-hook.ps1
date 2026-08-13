@@ -9,12 +9,12 @@
 # The $Version and $Sha256 table are updated on each cursor-v* release; the
 # release workflow prints the exact block to paste here.
 
-$Version = '0.1.0'
+$Version = '0.1.1'
 
 # Per-arch SHA-256 of the Windows release binaries (filled per release).
 $Sha256 = @{
-    'amd64' = '7abb7ae3ba0a45cc4c19c3382a47d05948967fcb228b77c9040b19ff5247951f'
-    'arm64' = '4363b5a61cd0d0cbe8c84b0ea803748063a3141adb6af2ee0e9e4b0d1c8004bf'
+    'amd64' = '81afc255e53ae93586496d3b141d65857fc9623fc72ecd888d5445900768de10'
+    'arm64' = '9209da87c7846e103f4d059ffb8e12cdb15356055b7b33248722cab640ec732b'
 }
 
 # Read a single line: the hook payload is one JSON document and Cursor may
