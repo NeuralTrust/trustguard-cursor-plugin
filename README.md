@@ -1,46 +1,22 @@
-# TrustGuard plugin for Cursor
+# NeuralTrust plugins for Cursor
 
-Cursor plugin bundling the TrustGuard AI-firewall hooks: every prompt, shell
-command, MCP tool call and file read the Cursor agent performs is evaluated by
-[TrustGuard](https://neuraltrust.ai) before it executes, and blocked, gated or
-allowed according to your TrustGuard policy.
+Cursor plugin marketplace for [NeuralTrust](https://neuraltrust.ai). Install in
+Cursor via **Customize → Plugins → Add → From Local Repo** (a clone of this
+repository) or with the repository URL where supported.
 
-Contents:
+| Plugin | What it does |
+|---|---|
+| [`trustguard/`](./trustguard/) | AI firewall for the Cursor agent: every prompt, shell command, MCP tool call and file read is evaluated by TrustGuard before it executes — prompt injection, dangerous commands and sensitive-data leaks are blocked per policy. |
 
-- `hooks/hooks.json` — registers the four control events
-  (`beforeSubmitPrompt`, `beforeShellExecution`, `beforeMCPExecution`,
-  `beforeReadFile`) against the bootstrap script.
-- `hooks/trustguard-hook.sh` — bootstrap (macOS/Linux, and Windows under Git
-  Bash): runs `trustguard-cursor` from the PATH when present; otherwise
-  downloads the pinned release for the OS/arch into `~/.trustguard/bin`,
-  verifies its SHA-256 against the table embedded in the script, and executes
-  it. Any bootstrap failure fails open with a stderr warning, so an
-  unconfigured machine never loses the editor.
-- `hooks/trustguard-hook.cmd` + `hooks/trustguard-hook.ps1` — Windows
-  bootstrap with the same cascade (PATH → `%USERPROFILE%\.trustguard\bin` →
-  verified download of the `.exe`). The hook command is a polyglot —
-  `sh ./hooks/trustguard-hook.sh || ./hooks/trustguard-hook.cmd` — so one
-  `hooks.json` works everywhere: unix runs the `.sh`; Windows uses Git Bash's
-  `sh` when available and otherwise falls through to the `.cmd`/PowerShell
-  path.
-- `skills/setup-trustguard/` — guided setup: configure the endpoint + API key,
-  verify; covers manual binary install where needed.
+See [`trustguard/README.md`](./trustguard/README.md) for configuration
+(TrustGuard endpoint + collector API key) and how the binary bootstrap works.
 
-No MDM or manual distribution is required — the first hook event downloads
-the binary automatically. (The PowerShell path still needs a smoke test on a
-real Windows machine before publishing.)
+## Repository layout
 
-## Publishing model
-
-Cursor requires plugin sources to be publicly accessible, so this directory
-is the **source of truth** mirrored to the public
-`NeuralTrust/trustguard-cursor-plugin` repository by the `cursor-plugin-sync`
-workflow on every change to `main` (same split as `semgrep/cursor-plugin` and
-`snyk/cursor-plugin-snyk`). Binaries are released there too — a public repo is
-also required for unauthenticated downloads — by the
-`cursor-integration-release` workflow on `cursor-vX.Y.Z` tags, which prints
-the `VERSION` + checksum blocks to paste into both bootstrap scripts. Both
-workflows need the `GH_TOKEN` secret (PAT with write access to the public
-repo). The marketplace listing points at the public repo. Runtime configuration lives in `~/.trustguard/cursor.json` — see
-[../README.md](../README.md) for the full reference (fail modes, per-event
-toggles, enterprise distribution notes).
+- [`trustguard/`](./trustguard/) — the Cursor plugin (hooks, bootstraps, skill).
+- [`cli/`](./cli/) — source of the `trustguard-cursor` hook binary (Go,
+  stdlib-only; it talks exclusively to the TrustGuard data plane
+  `/v1/evaluate`). `make build` / `make test`.
+- [`.github/workflows/`](./.github/workflows/) — CI and the tag-driven
+  release that publishes the platform binaries the plugin bootstraps
+  auto-download (SHA-256 pinned in the reviewed plugin).

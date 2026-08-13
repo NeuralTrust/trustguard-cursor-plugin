@@ -23,11 +23,12 @@ trustguard-cursor version || ls ~/.trustguard/bin/
 Install manually only if both are missing (Windows, unsupported arch, or a
 network that blocks GitHub releases):
 
-- **From a release**: download the binary for the user's OS/arch from the
-  NeuralTrust TrustGuard releases page (`cursor-vX.Y.Z` tags) and place it on
-  the PATH (e.g. `/usr/local/bin/trustguard-cursor`, `chmod +x`).
-- **From source** (requires Go): in a TrustGuard checkout run
-  `make build-cursor-integration`, then copy `bin/trustguard-cursor` onto the PATH.
+- **From a release**: download the binary for the user's OS/arch from
+  https://github.com/NeuralTrust/trustguard-cursor-plugin/releases and place
+  it on the PATH (e.g. `/usr/local/bin/trustguard-cursor`, `chmod +x`).
+- **From source** (requires Go): in a clone of
+  https://github.com/NeuralTrust/trustguard-cursor-plugin run `make build`,
+  then copy `bin/trustguard-cursor` onto the PATH.
 
 ## 2. Configure the connection
 
@@ -36,26 +37,23 @@ The hook layers its configuration: a managed MDM file
 or `%ProgramData%\TrustGuard\cursor.json`), then `~/.trustguard/cursor.json`,
 then `TRUSTGUARD_*` environment variables. **Check the managed file first** —
 if the user's company deploys it via MDM, setup may already be done and only
-verification (step 3) is needed. Otherwise, two situations:
+verification (step 3) is needed. Otherwise:
 
-- **The user's team already has TrustGuard**: ask the user for the data-plane
-  URL and a collector API key (`tgk_…`). Do NOT ask the user to paste the key
-  into the chat — have them create the file themselves, or write the file with a
-  placeholder and let them fill it in:
+Ask the user for the data-plane URL and a collector API key (`tgk_…`) — both
+come from the team's TrustGuard admin, who manages the guard, detectors and
+policies in the NeuralTrust app and issues API keys for the Cursor collector
+there. If the user has neither, point them to their platform/security team.
+Do NOT ask the user to paste the key into the chat — have them create the
+file themselves, or write the file with a placeholder and let them fill it in:
 
-  ```json
-  {
-    "data_url": "https://<trustguard-data-plane>",
-    "api_key": "tgk_REPLACE_ME"
-  }
-  ```
+```json
+{
+  "data_url": "https://<trustguard-data-plane>",
+  "api_key": "tgk_REPLACE_ME"
+}
+```
 
-  The file should be `chmod 600`.
-
-- **Fresh TrustGuard**: an admin can provision everything (guard, detectors,
-  policy, collector and API key) with
-  `trustguard-cursor setup -control-url <control-plane> -data-url <data-plane> -write-config`
-  using an admin JWT in `ADMIN_JWT`.
+The file should be `chmod 600`.
 
 Optional keys: `fail_mode` (`open` default / `closed`), `transform_action`
 (`ask` default / `deny` / `allow`), `timeout_ms` (5000), `consumer_id`.
