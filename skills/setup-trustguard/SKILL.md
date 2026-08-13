@@ -31,8 +31,12 @@ network that blocks GitHub releases):
 
 ## 2. Configure the connection
 
-The hook reads `~/.trustguard/cursor.json` (environment variables `TRUSTGUARD_*`
-override it). Two situations:
+The hook layers its configuration: a managed MDM file
+(`/etc/trustguard/cursor.json`, `/Library/Application Support/TrustGuard/cursor.json`
+or `%ProgramData%\TrustGuard\cursor.json`), then `~/.trustguard/cursor.json`,
+then `TRUSTGUARD_*` environment variables. **Check the managed file first** —
+if the user's company deploys it via MDM, setup may already be done and only
+verification (step 3) is needed. Otherwise, two situations:
 
 - **The user's team already has TrustGuard**: ask the user for the data-plane
   URL and a collector API key (`tgk_…`). Do NOT ask the user to paste the key
