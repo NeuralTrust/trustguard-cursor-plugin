@@ -1,0 +1,16 @@
+{
+  "name": "neuraltrust",
+  "owner": {
+    "name": "NeuralTrust"
+  },
+  "metadata": {
+    "description": "NeuralTrust plugins for Cursor: TrustGuard AI firewall for the Cursor agent."
+  },
+  "plugins": [
+    {
+      "name": "trustguard",
+      "source": "trustguard",
+      "description": "AI firewall for the Cursor agent: blocks prompt injection, dangerous commands and sensitive-data leaks via TrustGuard."
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+# Releases the trustguard-cursor binary.
+#
+# Push a vX.Y.Z tag: cross-compiles the binary for macOS/Linux/Windows
+# (amd64 + arm64), generates SHA256SUMS, and publishes a GitHub Release in
+# this repository — the URLs the plugin bootstraps download from. The job
+# summary prints the VERSION + checksum blocks to paste into
+# trustguard/hooks/trustguard-hook.sh and trustguard-hook.ps1; commit those
+# (plus the plugin.json version bump) to activate the new version.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release trustguard-cursor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile
+        id: build
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          mkdir -p dist
+          for platform in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            GOOS="${platform%/*}"
+            GOARCH="${platform#*/}"
+            ext=""
+            [ "$GOOS" = "windows" ] && ext=".exe"
+            out="dist/trustguard-cursor_${VERSION}_${GOOS}_${GOARCH}${ext}"
+            echo "building $out"
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+              go build -trimpath -ldflags "-s -w" -o "$out" ./cli
+          done
+          (cd dist && sha256sum -- * > SHA256SUMS)
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "trustguard-cursor ${{ steps.build.outputs.version }}" \
+            --notes "TrustGuard integration binary for Cursor agent hooks. Verify downloads against SHA256SUMS."
+
+      - name: Bootstrap checksum blocks (paste into the hook scripts)
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.build.outputs.version }}"
+          sha_for() { grep " trustguard-cursor_${VERSION}_$1\$" dist/SHA256SUMS | cut -d' ' -f1; }
+          {
+            echo '### Paste into trustguard/hooks/trustguard-hook.sh'
+            echo '```sh'
+            echo "VERSION=\"$VERSION\""
+            for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+              echo "SHA256_${platform}=\"$(sha_for "$platform")\""
+            done
+            echo "SHA256_windows_amd64=\"$(sha_for windows_amd64.exe)\""
+            echo "SHA256_windows_arm64=\"$(sha_for windows_arm64.exe)\""
+            echo '```'
+            echo '### Paste into trustguard/hooks/trustguard-hook.ps1'
+            echo '```powershell'
+            echo "\$Version = '$VERSION'"
+            echo "\$Sha256 = @{"
+            echo "    'amd64' = '$(sha_for windows_amd64.exe)'"
+            echo "    'arm64' = '$(sha_for windows_arm64.exe)'"
+            echo "}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
