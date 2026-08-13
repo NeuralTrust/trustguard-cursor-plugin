@@ -59,12 +59,11 @@ type verdict struct {
 }
 
 func runHook(stdin io.Reader, stdout io.Writer, cfg Config) error {
-	raw, err := io.ReadAll(io.LimitReader(stdin, 16<<20))
-	if err != nil {
-		return fmt.Errorf("read hook input: %w", err)
-	}
+	// Decode incrementally: the decoder returns as soon as the top-level JSON
+	// value is complete. Cursor may keep the stdin pipe open after writing the
+	// event, so waiting for EOF (io.ReadAll) would hang the hook forever.
 	var in hookInput
-	if err := json.Unmarshal(raw, &in); err != nil {
+	if err := json.NewDecoder(io.LimitReader(stdin, 16<<20)).Decode(&in); err != nil {
 		return fmt.Errorf("decode hook input: %w", err)
 	}
 

@@ -17,7 +17,9 @@ $Sha256 = @{
     'arm64' = '4363b5a61cd0d0cbe8c84b0ea803748063a3141adb6af2ee0e9e4b0d1c8004bf'
 }
 
-$Stdin = [Console]::In.ReadToEnd()
+# Read a single line: the hook payload is one JSON document and Cursor may
+# keep stdin open, so ReadToEnd would wait forever for an EOF that never comes.
+$Stdin = [Console]::In.ReadLine()
 
 function Invoke-Hook([string]$Exe) {
     $out = $Stdin | & $Exe hook
