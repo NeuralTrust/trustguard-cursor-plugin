@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "sh ./hooks/trustguard-hook.sh || ./hooks/trustguard-hook.cmd",
+        "timeout": 30
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "sh ./hooks/trustguard-hook.sh || ./hooks/trustguard-hook.cmd",
+        "timeout": 30
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "sh ./hooks/trustguard-hook.sh || ./hooks/trustguard-hook.cmd",
+        "timeout": 30
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "command": "sh ./hooks/trustguard-hook.sh || ./hooks/trustguard-hook.cmd",
+        "timeout": 30
+      }
+    ]
+  }
+}
