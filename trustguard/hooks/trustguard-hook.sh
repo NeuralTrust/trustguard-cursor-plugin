@@ -17,12 +17,12 @@ BASE_URL="${TRUSTGUARD_CURSOR_DOWNLOAD_BASE:-https://github.com/NeuralTrust/trus
 BIN_DIR="${TRUSTGUARD_CURSOR_BIN_DIR:-$HOME/.trustguard/bin}"
 
 # Per-platform SHA-256 of the release binaries (filled per release).
-SHA256_darwin_amd64="75c72b761c2fb19626d9514e375ac17c33216730ab3d49d273a7387791476fb9"
-SHA256_darwin_arm64="996dd3928b2350dcbd9851ba4d3158a54cf02b8df8f4b940828a745e9d9099bb"
-SHA256_linux_amd64="71d573463d32fcbd452161ccb295339fa83f393d54b227d63251363823f53da6"
-SHA256_linux_arm64="fe5543a215132dedafadd1c5bd066f44981c97c520026b9f04485a60e0eff904"
-SHA256_windows_amd64="5c946f59c77efec27dae82fb075a9a41c437e3b7e536cbb10ffd01cefee86d72"
-SHA256_windows_arm64="644b3fad82b61c27ead4fbcdf0f6e6157d77bfe5cb441962303bf86224c1f33f"
+SHA256_darwin_amd64="5d14cac1be3cf91e2ddb8e256cb4dd11314e64ca2bcd77c90356a5c5c20c32a5"
+SHA256_darwin_arm64="cb36784500d8dc3ce030dbc20c03e9215de4ae4b3a2fbfd8e1b0dc7578b64dcd"
+SHA256_linux_amd64="3a7883f40ffc40826cc52764a4ca874a768648db24127a6a0c4fa82268943846"
+SHA256_linux_arm64="8221ab50f221e004c7ce96d607dbd48ba14ce58b60b1ef5c2a10e557e5d1d7ac"
+SHA256_windows_amd64="5def9e824a8032b7c5f659aa2fad4a37eba5abf12bb0464e72ad64525ea60094"
+SHA256_windows_arm64="f1619f3cefc92230a0aa0e56e9fca021b238a4c65fbfcdf6c6ff54f3da30d202"
 
 fail_open() {
     echo "trustguard-cursor bootstrap: $1 — allowing without evaluation" >&2

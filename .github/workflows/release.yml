@@ -152,10 +152,40 @@ jobs:
         run: go test -race ./cli/
 
       - name: Rebuild and verify the pins
+        id: verify
         run: |
           set -euo pipefail
           scripts/build-dist.sh "$VERSION"
           python3 scripts/release.py verify "$VERSION"
+
+      # Pins can only be wrong if whatever produced them built differently from
+      # this runner. Failing alone would dead-end the release, since main can
+      # not be corrected from here, so push a branch that re-pins with what
+      # this runner built and let a human merge it.
+      - name: Re-pin on mismatch
+        if: failure() && steps.verify.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          BRANCH="release/v${VERSION}"
+          python3 scripts/release.py pin "$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add -- \
+            trustguard/hooks/trustguard-hook.sh \
+            trustguard/hooks/trustguard-hook.ps1
+          git commit -m "chore(release): re-pin v${VERSION}"
+          git push --force origin "$BRANCH"
+
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1"
+          echo "::error::Pins did not match this runner; corrected checksums pushed to ${BRANCH}"
+          {
+            echo "### v${VERSION} was not published"
+            echo
+            echo "The checksums on \`main\` do not describe the binaries this runner built,"
+            echo "so nothing was tagged. [Merge the corrected pins](${url}) and the release"
+            echo "will publish itself."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tag
         run: |

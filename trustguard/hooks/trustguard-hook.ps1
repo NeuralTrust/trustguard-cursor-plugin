@@ -18,8 +18,8 @@ $Version = '0.1.2'
 
 # Per-arch SHA-256 of the Windows release binaries (filled per release).
 $Sha256 = @{
-    'amd64' = '5c946f59c77efec27dae82fb075a9a41c437e3b7e536cbb10ffd01cefee86d72'
-    'arm64' = '644b3fad82b61c27ead4fbcdf0f6e6157d77bfe5cb441962303bf86224c1f33f'
+    'amd64' = '5def9e824a8032b7c5f659aa2fad4a37eba5abf12bb0464e72ad64525ea60094'
+    'arm64' = 'f1619f3cefc92230a0aa0e56e9fca021b238a4c65fbfcdf6c6ff54f3da30d202'
 }
 
 # Read a single line: the hook payload is one JSON document and Cursor may
