@@ -9,8 +9,8 @@
 # -InstallOnly is how the script re-enters itself as the detached installer; it
 # takes no hook input and answers nothing.
 #
-# The $Version and $Sha256 table are updated on each cursor-v* release; the
-# release workflow prints the exact block to paste here.
+# The $Version and $Sha256 table are updated automatically by the Release
+# workflow on every push to main.
 
 param([switch]$InstallOnly)
 

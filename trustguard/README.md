@@ -156,7 +156,7 @@ make install-local  # copy into ~/.cursor/plugins/local/trustguard
                     # (Cursor rejects symlinks that point outside that tree)
 ```
 
-Binary source: [`../cli/`](../cli/). Tag `vX.Y.Z` runs the release workflow:
-cross-compiles six platform binaries, publishes a GitHub Release, and prints
-the `VERSION` + SHA-256 block to paste into both bootstraps (and bump
-`plugin.json`). Never ship a release without updating those pinned checksums.
+Binary source: [`../cli/`](../cli/). Every push to `main` auto-releases: bumps
+the patch version, publishes the six platform binaries, and pins `VERSION` +
+SHA-256 into both bootstraps (plus `plugin.json`). See the root README for
+skip flags and branch-protection notes.

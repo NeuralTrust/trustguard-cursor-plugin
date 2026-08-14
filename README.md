@@ -34,14 +34,30 @@ make install-local         # copy plugin into ~/.cursor/plugins/local (Cursor re
 make validate-marketplace  # AJV-validate manifests against Cursor schemas
 ```
 
+## Releasing the binary
+
+Every push to `main` (except commits marked `[skip release]`) runs the
+**Release** workflow:
+
+1. Bumps the patch version from the latest `v*` tag
+2. Builds the six platform binaries
+3. Pins `VERSION` + SHA-256 into the bootstrap scripts and bumps `plugin.json`
+4. Commits `chore(release): vX.Y.Z [skip release]`, tags, and publishes the
+   GitHub Release
+
+Manual run: **Actions → Release → Run workflow**. Skip one push by including
+`[skip release]` in the commit message.
+
+If `main` is branch-protected, allow `github-actions[bot]` to push (or the
+workflow cannot write the pin commit).
+
 ## Publishing to the Cursor Marketplace
 
 The repo is a multi-plugin marketplace (`neuraltrust`) with one plugin
-(`trustguard`). Submission checklist:
+(`trustguard` / display name **TrustGuard**). Submission checklist:
 
 1. `make validate-marketplace` and `make test` pass.
-2. GitHub Release `vX.Y.Z` exists with the six platform binaries and checksums
-   pinned in `trustguard/hooks/trustguard-hook.{sh,ps1}`.
+2. A recent GitHub Release exists (created automatically from `main`).
 3. Repo is **public**: https://github.com/NeuralTrust/trustguard-cursor-plugin
 4. Submit the repository URL at
    [cursor.com/marketplace/publish](https://cursor.com/marketplace/publish).

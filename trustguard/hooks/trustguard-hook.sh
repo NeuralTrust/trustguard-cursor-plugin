@@ -8,8 +8,8 @@
 # event on. Every bootstrap failure fails open (the editor must never brick)
 # with a warning on stderr.
 #
-# The VERSION and SHA256_* table are updated on each cursor-v* release; the
-# release workflow prints the exact block to paste here.
+# The VERSION and SHA256_* table are updated automatically by the Release
+# workflow on every push to main.
 set -u
 
 VERSION="0.1.1"

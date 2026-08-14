@@ -1,39 +1,101 @@
-# Releases the trustguard-cursor binary.
+# Auto-release trustguard-cursor on every push to main.
 #
-# Push a vX.Y.Z tag: cross-compiles the binary for macOS/Linux/Windows
-# (amd64 + arm64), generates SHA256SUMS, and publishes a GitHub Release in
-# this repository — the URLs the plugin bootstraps download from. The job
-# summary prints the VERSION + checksum blocks to paste into
-# trustguard/hooks/trustguard-hook.sh and trustguard-hook.ps1; commit those
-# (plus the plugin.json version bump) to activate the new version.
+# Flow:
+#   1. Bump patch version from the latest v* tag (or start at 0.1.0)
+#   2. Write the new version into plugin.json + cli/main.go
+#   3. Cross-compile the six platform binaries and compute SHA-256
+#   4. Pin VERSION + checksums into the bootstrap scripts
+#   5. Commit as chore(release): vX.Y.Z [skip release], tag, push
+#   6. Publish the GitHub Release with the binaries
+#
+# The follow-up commit carries [skip release] so it does not loop. Manual
+# runs: Actions → Release → Run workflow. Skip a push with [skip release]
+# in the commit message.
 
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Build & Release trustguard-cursor
+    name: Build, pin & release
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       !contains(github.event.head_commit.message, '[skip release]') &&
+       !startsWith(github.event.head_commit.message, 'chore(release):'))
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
-      - name: Cross-compile
-        id: build
+      - name: Next version
+        id: ver
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          git fetch --tags --force
+          latest="$(git tag -l 'v*' --sort=-v:refname | head -n1 || true)"
+          if [ -z "$latest" ]; then
+            VERSION="0.1.0"
+          else
+            raw="${latest#v}"
+            IFS=. read -r major minor patch <<EOF
+          $raw
+          EOF
+            VERSION="${major}.${minor}.$((patch + 1))"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Next release: v$VERSION (previous: ${latest:-none})"
+
+      - name: Bump version in source
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          version = os.environ["VERSION"]
+
+          plugin = Path("trustguard/.cursor-plugin/plugin.json")
+          text, n = re.subn(r'"version":\s*"[^"]*"', f'"version": "{version}"', plugin.read_text(), count=1)
+          if n != 1:
+              raise SystemExit("failed to bump plugin.json version")
+          plugin.write_text(text)
+
+          main = Path("cli/main.go")
+          text, n = re.subn(
+              r'const integrationVersion = "[^"]*"',
+              f'const integrationVersion = "{version}"',
+              main.read_text(),
+              count=1,
+          )
+          if n != 1:
+              raise SystemExit("failed to bump integrationVersion")
+          main.write_text(text)
+          PY
+
+      - name: Cross-compile
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
           mkdir -p dist
           for platform in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
             GOOS="${platform%/*}"
@@ -46,37 +108,108 @@ jobs:
               go build -trimpath -ldflags "-s -w" -o "$out" ./cli
           done
           (cd dist && sha256sum -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Pin checksums in bootstraps
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+
+          version = os.environ["VERSION"]
+          sums = {}
+          for line in Path("dist/SHA256SUMS").read_text().splitlines():
+              h, name = line.split()
+              sums[name] = h
+
+          def sha(suffix: str) -> str:
+              key = f"trustguard-cursor_{version}_{suffix}"
+              if key not in sums:
+                  raise SystemExit(f"missing {key} in SHA256SUMS")
+              return sums[key]
+
+          sh_pins = "\n".join([
+              f'VERSION="{version}"',
+              f'SHA256_darwin_amd64="{sha("darwin_amd64")}"',
+              f'SHA256_darwin_arm64="{sha("darwin_arm64")}"',
+              f'SHA256_linux_amd64="{sha("linux_amd64")}"',
+              f'SHA256_linux_arm64="{sha("linux_arm64")}"',
+              f'SHA256_windows_amd64="{sha("windows_amd64.exe")}"',
+              f'SHA256_windows_arm64="{sha("windows_arm64.exe")}"',
+          ]) + "\n"
+
+          sh = Path("trustguard/hooks/trustguard-hook.sh")
+          text, n = re.subn(
+              r'^VERSION="[^"]*"\n(?:SHA256_[a-z0-9_]+="[a-f0-9]+"\n)+',
+              sh_pins,
+              sh.read_text(),
+              count=1,
+              flags=re.M,
+          )
+          if n != 1:
+              raise SystemExit(f"failed to patch {sh}: replacements={n}")
+          sh.write_text(text)
+
+          ps = Path("trustguard/hooks/trustguard-hook.ps1")
+          text = ps.read_text()
+          text, n = re.subn(r"\$Version = '[^']*'", f"$Version = '{version}'", text, count=1)
+          if n != 1:
+              raise SystemExit(f"failed to patch Version in {ps}")
+          block = (
+              "$Sha256 = @{\n"
+              f"    'amd64' = '{sha('windows_amd64.exe')}'\n"
+              f"    'arm64' = '{sha('windows_arm64.exe')}'\n"
+              "}"
+          )
+          text, n = re.subn(r"\$Sha256 = @\{[^}]+\}", block, text, count=1, flags=re.S)
+          if n != 1:
+              raise SystemExit(f"failed to patch Sha256 in {ps}")
+          ps.write_text(text)
+          PY
+
+      - name: Commit pins, tag & push
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          TAG="${{ steps.ver.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            trustguard/hooks/trustguard-hook.sh \
+            trustguard/hooks/trustguard-hook.ps1 \
+            trustguard/.cursor-plugin/plugin.json \
+            cli/main.go
+          if git diff --cached --quiet; then
+            echo "pins already up to date — nothing to commit"
+          else
+            git commit -m "chore(release): v${VERSION} [skip release]"
+          fi
+          # Retag only when the annotated tag is missing (normal path) or this is a
+          # manual re-run that already created it mid-failure.
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag -d "$TAG"
+          fi
+          git tag -a "$TAG" -m "trustguard-cursor ${VERSION}"
+          git push origin HEAD:main
+          git push origin "$TAG"
 
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "trustguard-cursor ${{ steps.build.outputs.version }}" \
-            --notes "TrustGuard integration binary for Cursor agent hooks. Verify downloads against SHA256SUMS."
+          VERSION="${{ steps.ver.outputs.version }}"
+          TAG="${{ steps.ver.outputs.tag }}"
+          gh release create "$TAG" dist/* \
+            --title "trustguard-cursor ${VERSION}" \
+            --notes "$(cat <<EOF
+          Automated release from \`main\`.
 
-      - name: Bootstrap checksum blocks (paste into the hook scripts)
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.build.outputs.version }}"
-          sha_for() { grep " trustguard-cursor_${VERSION}_$1\$" dist/SHA256SUMS | cut -d' ' -f1; }
-          {
-            echo '### Paste into trustguard/hooks/trustguard-hook.sh'
-            echo '```sh'
-            echo "VERSION=\"$VERSION\""
-            for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
-              echo "SHA256_${platform}=\"$(sha_for "$platform")\""
-            done
-            echo "SHA256_windows_amd64=\"$(sha_for windows_amd64.exe)\""
-            echo "SHA256_windows_arm64=\"$(sha_for windows_arm64.exe)\""
-            echo '```'
-            echo '### Paste into trustguard/hooks/trustguard-hook.ps1'
-            echo '```powershell'
-            echo "\$Version = '$VERSION'"
-            echo "\$Sha256 = @{"
-            echo "    'amd64' = '$(sha_for windows_amd64.exe)'"
-            echo "    'arm64' = '$(sha_for windows_arm64.exe)'"
-            echo "}"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          TrustGuard integration binary for Cursor agent hooks. Verify downloads against \`SHA256SUMS\`.
+
+          The plugin bootstraps in this commit are already pinned to **${VERSION}**.
+          EOF
+          )"
