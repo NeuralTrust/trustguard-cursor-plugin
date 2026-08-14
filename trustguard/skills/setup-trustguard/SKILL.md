@@ -6,11 +6,23 @@ description: Set up the TrustGuard AI firewall for Cursor — install the trustg
 # Set up TrustGuard for Cursor
 
 The TrustGuard plugin gates this agent with hooks that run `trustguard-cursor hook`.
-For the hooks to enforce anything, the binary must be on the PATH and configured
-with a TrustGuard data-plane URL and a collector API key. Walk the user through
-the three steps below, verifying each one.
+Enterprise orgs ship one Cursor collector for the whole company: employees do
+**not** need a NeuralTrust account. Walk the user through the steps below.
 
-## 1. Install the binary
+## 1. Check for MDM (enterprise) first
+
+Look for the managed config file:
+
+- macOS: `/Library/Application Support/TrustGuard/cursor.json`
+- Linux: `/etc/trustguard/cursor.json`
+- Windows: `%ProgramData%\TrustGuard\cursor.json`
+
+If it exists and contains an `api_key`, setup is already done by IT. Tell the
+user their org firewall is managed — they cannot (and should not) override
+`api_key`, `data_url` or `fail_mode`. Skip to step 3 (verify). Soft prefs such
+as `transform_action` or `timeout_ms` can still live in `~/.trustguard/cursor.json`.
+
+## 2. Install the binary (if needed)
 
 On macOS/Linux this is usually automatic: the plugin's bootstrap hook
 downloads the pinned release into `~/.trustguard/bin` (SHA-256 verified) on
@@ -30,52 +42,49 @@ network that blocks GitHub releases):
   https://github.com/NeuralTrust/trustguard-cursor-plugin run `make build`,
   then copy `bin/trustguard-cursor` onto the PATH.
 
-## 2. Configure the connection
+## 3. Configure the connection (BYO / non-MDM only)
 
-The hook layers its configuration: a managed MDM file
-(`/etc/trustguard/cursor.json`, `/Library/Application Support/TrustGuard/cursor.json`
-or `%ProgramData%\TrustGuard\cursor.json`), then `~/.trustguard/cursor.json`,
-then `TRUSTGUARD_*` environment variables. **Check the managed file first** —
-if the user's company deploys it via MDM, setup may already be done and only
-verification (step 3) is needed. Otherwise:
-
-Ask the user for the data-plane URL and a collector API key (`tgk_…`) — both
-come from the team's TrustGuard admin, who manages the guard, detectors and
-policies in the NeuralTrust app and issues API keys for the Cursor collector
-there. If the user has neither, point them to their platform/security team.
-Do NOT ask the user to paste the key into the chat — have them create the
-file themselves, or write the file with a placeholder and let them fill it in:
+Only when step 1 found no managed key. Ask the user for the data-plane URL and
+the **org** Cursor collector API key (`tgk_…`) from their security/platform
+team — not a personal NeuralTrust key. Do NOT ask the user to paste the key
+into the chat — have them create the file themselves, or write a placeholder:
 
 ```json
 {
   "data_url": "https://<trustguard-data-plane>",
-  "api_key": "tgk_REPLACE_ME"
+  "api_key": "tgk_REPLACE_ME",
+  "fail_mode": "closed"
 }
 ```
 
-The file should be `chmod 600`.
+Path: `~/.trustguard/cursor.json`, `chmod 600`.
 
-Optional keys: `fail_mode` (`open` default / `closed`), `transform_action`
-(`ask` default / `deny` / `allow`), `timeout_ms` (5000), `consumer_id`.
+Optional soft keys: `transform_action` (`ask` / `deny` / `allow`),
+`timeout_ms` (5000), `consumer_id` (fallback only — runtime prefers the Cursor
+account email from the hook payload).
 
-## 3. Verify
+## 4. Verify
 
 Run a canned event through the hook and confirm TrustGuard answers:
 
 ```bash
-echo '{"hook_event_name":"beforeShellExecution","command":"echo hello"}' | trustguard-cursor hook
+echo '{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"echo hello"},"user_email":"you@company.com"}' | trustguard-cursor hook
 ```
 
 Expected: `{"permission":"allow"}`. If it prints a stderr warning about a
-missing API key, step 2 is incomplete. A quick block test (needs the
+missing API key, configuration is incomplete. A quick block test (needs the
 `code_sanitation` detector enabled in the policy):
 
 ```bash
-echo '{"hook_event_name":"beforeShellExecution","command":"rm -rf /"}' | trustguard-cursor hook
+echo '{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"rm -rf /"}}' | trustguard-cursor hook
 ```
 
-Expected: `{"permission":"deny",...}`.
+Expected: `{"permission":"deny",...}` with user message
+`TrustGuard blocked this action`.
 
 Tell the user that hooks activate for new agent conversations, and that
 verdicts follow the TrustGuard policy: `block` → denied, PII/secrets
-(`transform`) → confirmation prompt, `report` → allowed with a notice.
+(`transform`) → allowed with a warning unless `transform_action` is `deny`,
+`report` → allowed with a notice. A finding on `postToolUse` cannot undo a tool
+that already ran; it is injected as context flagging the result as untrusted.
+Attribution uses `consumer_id = cursor:<user_email>` when Cursor provides it.

@@ -52,9 +52,10 @@ Usage:
   trustguard-cursor [hook]            evaluate one hook event (stdin JSON → stdout JSON)
   trustguard-cursor version           print version
 
-Runtime configuration (env wins over ~/.trustguard/cursor.json):
+Runtime configuration (env wins over ~/.trustguard/cursor.json, except when
+MDM managed mode locks api_key/data_url/fail_mode):
   TRUSTGUARD_DATA_URL       data-plane base URL   (default http://localhost:8081)
-  TRUSTGUARD_API_KEY        collector API key     (tgk_…)
+  TRUSTGUARD_API_KEY        org Cursor collector API key (tgk_…)
   TRUSTGUARD_FAIL_MODE      open|closed on guard errors (default open)
   TRUSTGUARD_TIMEOUT_MS     evaluate timeout in ms      (default 5000)
   TRUSTGUARD_CURSOR_CONFIG  alternative config file path

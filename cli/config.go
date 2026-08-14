@@ -7,14 +7,19 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
-// Config drives the hook runtime. Values resolve as env > config file > default.
+// Config drives the hook runtime. Values resolve as env > user file > managed
+// file > default — except in managed mode (see loadConfig), where the org key
+// and its data-plane URL cannot be overridden by the developer.
 type Config struct {
 	// DataURL is the TrustGuard data-plane base URL (serves /v1/evaluate).
 	DataURL string `json:"data_url"`
 	// APIKey is a collector API key (tgk_…); with it no routing key is needed.
+	// In enterprise deployments this is the org-wide Cursor collector key,
+	// provisioned by MDM — employees do not need a NeuralTrust account.
 	APIKey string `json:"api_key"`
 	// FailMode decides the verdict when TrustGuard is unreachable or errors:
 	// "open" allows, "closed" denies.
@@ -28,10 +33,17 @@ type Config struct {
 	TimeoutMS int `json:"timeout_ms"`
 	// MaxContentBytes truncates file/tool content sent to the guard.
 	MaxContentBytes int `json:"max_content_bytes"`
-	// ConsumerID anchors anomaly detection and policy routing (default OS user).
+	// ConsumerID anchors anomaly detection and policy routing. Prefer the
+	// Cursor user_email from the hook payload at runtime; this field is the
+	// fallback (MDM template, env, or OS user).
 	ConsumerID string `json:"consumer_id"`
-	// Events disables individual hook events, e.g. {"beforeReadFile": false}.
+	// Events disables individual hook events, e.g. {"postToolUse": false}.
 	Events map[string]bool `json:"events"`
+
+	// managed is set when the MDM system file shipped an org API key. Locked
+	// fields then refuse user-file and env overrides so a developer cannot
+	// disable or redirect the org firewall.
+	managed bool
 }
 
 const (
@@ -73,25 +85,74 @@ func systemConfigPath() string {
 	}
 }
 
-// loadConfig layers configuration: managed system file, then the user file
-// (fields present in it override), then environment variables.
+// loadConfig layers configuration for two deployment modes:
+//
+//   - Managed (enterprise): the MDM system file carries an api_key. That key,
+//     its data_url and fail_mode are locked — user file and env cannot replace
+//     them. Soft prefs (timeout, transform_action, events, consumer_id) still
+//     layer normally.
+//   - Local / BYO: no managed key. User file then env win, as before.
 func loadConfig() Config {
 	cfg := Config{}
-	for _, path := range []string{systemConfigPath(), defaultConfigPath()} {
-		if path == "" {
-			continue
-		}
-		if raw, err := os.ReadFile(path); err == nil {
-			_ = json.Unmarshal(raw, &cfg)
+	if raw, err := os.ReadFile(systemConfigPath()); err == nil {
+		_ = json.Unmarshal(raw, &cfg)
+		if strings.TrimSpace(cfg.APIKey) != "" {
+			cfg.managed = true
 		}
 	}
-	if v := os.Getenv("TRUSTGUARD_DATA_URL"); v != "" {
+
+	overlay := Config{}
+	if path := defaultConfigPath(); path != "" {
+		if raw, err := os.ReadFile(path); err == nil {
+			_ = json.Unmarshal(raw, &overlay)
+		}
+	}
+	applyOverlay(&cfg, overlay)
+	applyEnv(&cfg)
+	cfg.applyDefaults()
+	return cfg
+}
+
+// applyOverlay merges non-empty overlay fields into cfg, skipping the locked
+// enterprise fields when cfg is managed.
+func applyOverlay(cfg *Config, overlay Config) {
+	if overlay.DataURL != "" && !cfg.managed {
+		cfg.DataURL = overlay.DataURL
+	}
+	if overlay.APIKey != "" && !cfg.managed {
+		cfg.APIKey = overlay.APIKey
+	}
+	if overlay.FailMode != "" && !cfg.managed {
+		cfg.FailMode = overlay.FailMode
+	}
+	if overlay.TransformAction != "" {
+		cfg.TransformAction = overlay.TransformAction
+	}
+	if overlay.ReportNotice != nil {
+		cfg.ReportNotice = overlay.ReportNotice
+	}
+	if overlay.TimeoutMS > 0 {
+		cfg.TimeoutMS = overlay.TimeoutMS
+	}
+	if overlay.MaxContentBytes > 0 {
+		cfg.MaxContentBytes = overlay.MaxContentBytes
+	}
+	if overlay.ConsumerID != "" {
+		cfg.ConsumerID = overlay.ConsumerID
+	}
+	if overlay.Events != nil {
+		cfg.Events = overlay.Events
+	}
+}
+
+func applyEnv(cfg *Config) {
+	if v := os.Getenv("TRUSTGUARD_DATA_URL"); v != "" && !cfg.managed {
 		cfg.DataURL = v
 	}
-	if v := os.Getenv("TRUSTGUARD_API_KEY"); v != "" {
+	if v := os.Getenv("TRUSTGUARD_API_KEY"); v != "" && !cfg.managed {
 		cfg.APIKey = v
 	}
-	if v := os.Getenv("TRUSTGUARD_FAIL_MODE"); v != "" {
+	if v := os.Getenv("TRUSTGUARD_FAIL_MODE"); v != "" && !cfg.managed {
 		cfg.FailMode = v
 	}
 	if v := os.Getenv("TRUSTGUARD_TRANSFORM_ACTION"); v != "" {
@@ -105,8 +166,6 @@ func loadConfig() Config {
 	if v := os.Getenv("TRUSTGUARD_CONSUMER_ID"); v != "" {
 		cfg.ConsumerID = v
 	}
-	cfg.applyDefaults()
-	return cfg
 }
 
 func (c *Config) applyDefaults() {
@@ -146,6 +205,19 @@ func (c *Config) eventEnabled(name string) bool {
 
 func (c *Config) reportNotice() bool {
 	return c.ReportNotice == nil || *c.ReportNotice
+}
+
+// consumerIDFor prefers the Cursor-authenticated email from the hook payload
+// (enterprise attribution without a NeuralTrust login), then the configured
+// fallback, then the OS user.
+func consumerIDFor(cfg Config, in hookInput) string {
+	if email := strings.TrimSpace(in.UserEmail); email != "" {
+		return "cursor:" + email
+	}
+	if cfg.ConsumerID != "" {
+		return cfg.ConsumerID
+	}
+	return currentUser()
 }
 
 func currentUser() string {

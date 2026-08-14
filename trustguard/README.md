@@ -7,15 +7,16 @@ allowed according to your TrustGuard policy.
 
 Contents:
 
-- `hooks/hooks.json` — registers the four control events
-  (`beforeSubmitPrompt`, `beforeShellExecution`, `beforeMCPExecution`,
-  `beforeReadFile`) against the bootstrap script.
+- `hooks/hooks.json` — registers the three events (`beforeSubmitPrompt`,
+  `preToolUse`, `postToolUse`) against the bootstrap script. `preToolUse` is
+  generic, so one hook covers every tool the agent runs — shell, file reads and
+  writes, MCP calls, subagents — and `postToolUse` sees what each returns.
 - `hooks/trustguard-hook.sh` — bootstrap (macOS/Linux, and Windows under Git
   Bash): runs `trustguard-cursor` from the PATH when present; otherwise
-  downloads the pinned release for the OS/arch into `~/.trustguard/bin`,
-  verifies its SHA-256 against the table embedded in the script, and executes
-  it. Any bootstrap failure fails open with a stderr warning, so an
-  unconfigured machine never loses the editor.
+  installs the pinned release for the OS/arch into `~/.trustguard/bin` — in the
+  background, so the editor never waits on a download — verifying its SHA-256
+  against the table embedded in the script. Any bootstrap failure fails open
+  with a stderr warning, so an unconfigured machine never loses the editor.
 - `hooks/trustguard-hook.cmd` + `hooks/trustguard-hook.ps1` — Windows
   bootstrap with the same cascade (PATH → `%USERPROFILE%\.trustguard\bin` →
   verified download of the `.exe`). The hook command is a polyglot —
@@ -26,30 +27,44 @@ Contents:
 - `skills/setup-trustguard/` — guided setup: configure the endpoint + API key,
   verify; covers manual binary install where needed.
 
-No MDM or manual distribution is required — the first hook event downloads
-the binary automatically. (The PowerShell path still needs a smoke test on a
-real Windows machine before publishing.)
+No MDM or manual distribution is required — the first hook event kicks off the
+download and events are evaluated from the moment the binary lands (a second or
+two later); until then they are allowed. (The PowerShell path still needs a
+smoke test on a real Windows machine before publishing.)
 
 ## Event → evaluation mapping
 
 | Cursor event | `protocol` | `direction` | Payload sent | Main detectors |
 |---|---|---|---|---|
 | `beforeSubmitPrompt` | `llm` | `input` | `{"messages":[{role:user, content:prompt}]}` | prompt_guard, data_loss_prevention, prompt_moderation, multiturn_guard |
-| `beforeShellExecution` | `all` | `input` | `{"input": command}` | code_sanitation, data_loss_prevention |
-| `beforeMCPExecution` | `mcp` | `input` | JSON-RPC `tools/call` (tool name + arguments) | indirect_prompt_injection, prompt_guard |
-| `beforeReadFile` | `mcp` | `output` | JSON-RPC result carrying the file content | indirect_prompt_injection, data_loss_prevention |
+| `preToolUse` (Shell) | `all` | `input` | `{"input": command}` | code_sanitation, data_loss_prevention |
+| `preToolUse` (any other tool) | `mcp` | `input` | JSON-RPC `tools/call` (tool name + arguments) | indirect_prompt_injection, prompt_guard |
+| `postToolUse` | `mcp` | `output` | JSON-RPC result carrying the tool output | indirect_prompt_injection, data_loss_prevention |
 
 Verdict mapping: `block` → deny (`continue:false` for prompts) · `transform`
 (PII/secrets found; hooks cannot rewrite content) → `ask` by default ·
-`report` → allow with a notice · `allow`/gate `skip` → allow. `session_id` is
-Cursor's conversation id; `consumer_id` defaults to the OS user;
-`attributes.collector.type = "ide"` lets policies target IDE traffic.
+`report` → allow with a notice · `allow`/gate `skip` → allow.
+
+Neither event enforces `ask`: `beforeSubmitPrompt` only submits or silently
+discards, and Cursor accepts but ignores `ask` on `preToolUse`. So an `ask`
+verdict lets the action through and surfaces the warning; set
+`transform_action: "deny"` to stop it instead.
+
+`postToolUse` fires after the tool has already run and cannot revoke it, so a
+finding there is injected as `additional_context` telling the agent to treat the
+result as untrusted — never as a block it could not enforce. Disable it with
+`{"events": {"postToolUse": false}}` if you only want pre-execution control.
+`session_id` is Cursor's conversation id; `consumer_id` prefers the Cursor
+account email from the hook payload (`cursor:<email>`), falling back to the OS
+user; `attributes.collector.type = "ide"` lets policies target IDE traffic.
 
 ## Runtime configuration
 
-The guard, detectors and policies are managed by a TrustGuard admin in the
-NeuralTrust app; the hook only needs the data-plane URL and a collector API
-key. Configuration is layered — each level overrides the fields it sets:
+Enterprise model: a TrustGuard admin creates **one Cursor collector** for the
+org in NeuralTrust. Employees never need a NeuralTrust account — IT deploys the
+org key by MDM and Cursor is protected for everyone.
+
+Configuration is layered:
 
 1. **Managed (MDM) file**: `/etc/trustguard/cursor.json` (Linux),
    `/Library/Application Support/TrustGuard/cursor.json` (macOS),
@@ -57,19 +72,34 @@ key. Configuration is layered — each level overrides the fields it sets:
    `TRUSTGUARD_CURSOR_SYSTEM_CONFIG`.
 2. **User file**: `~/.trustguard/cursor.json` (`TRUSTGUARD_CURSOR_CONFIG`
    overrides the path).
-3. **Environment variables** (win over both).
+3. **Environment variables**.
+
+When the managed file ships an `api_key`, the install is in **managed mode**:
+`api_key`, `data_url` and `fail_mode` are locked — user file and env cannot
+replace them (a developer cannot disable or redirect the org firewall). Soft
+prefs (`timeout_ms`, `transform_action`, `events`, `consumer_id`) still layer.
+
+Recommended MDM payload:
+
+```json
+{
+  "data_url": "https://trustguard.example.com",
+  "api_key": "tgk_ORG_CURSOR_COLLECTOR",
+  "fail_mode": "closed"
+}
+```
 
 | Env | File key | Default | Meaning |
 |---|---|---|---|
-| `TRUSTGUARD_DATA_URL` | `data_url` | `http://localhost:8081` | data-plane base URL |
-| `TRUSTGUARD_API_KEY` | `api_key` | — | collector API key (`tgk_…`) |
-| `TRUSTGUARD_FAIL_MODE` | `fail_mode` | `open` | `open` allows / `closed` denies on errors or timeouts |
+| `TRUSTGUARD_DATA_URL` | `data_url` | `http://localhost:8081` | data-plane base URL (locked when managed) |
+| `TRUSTGUARD_API_KEY` | `api_key` | — | org Cursor collector API key (`tgk_…`; locked when managed) |
+| `TRUSTGUARD_FAIL_MODE` | `fail_mode` | `open` | `open` allows / `closed` denies on errors or timeouts (locked when managed) |
 | `TRUSTGUARD_TRANSFORM_ACTION` | `transform_action` | `ask` | hook answer for a `transform` verdict |
 | `TRUSTGUARD_TIMEOUT_MS` | `timeout_ms` | `5000` | per-request timeout |
-| `TRUSTGUARD_CONSUMER_ID` | `consumer_id` | `cursor:<os user>` | anomaly/policy anchor |
+| `TRUSTGUARD_CONSUMER_ID` | `consumer_id` | `cursor:<email\|os user>` | fallback anomaly/policy anchor; runtime prefers Cursor `user_email` |
 | — | `max_content_bytes` | `262144` | file/tool content clip size |
 | — | `report_notice` | `true` | notice on report-only findings |
-| — | `events` | all enabled | disable events, e.g. `{"beforeReadFile": false}` |
+| — | `events` | all enabled | disable events, e.g. `{"postToolUse": false}` |
 
 Without an API key the hook logs to stderr and **allows everything** — an
 unconfigured install never bricks the editor.
