@@ -131,26 +131,41 @@ jobs:
                   raise SystemExit(f"missing {key} in SHA256SUMS")
               return sums[key]
 
-          sh_pins = "\n".join([
-              f'VERSION="{version}"',
-              f'SHA256_darwin_amd64="{sha("darwin_amd64")}"',
-              f'SHA256_darwin_arm64="{sha("darwin_arm64")}"',
-              f'SHA256_linux_amd64="{sha("linux_amd64")}"',
-              f'SHA256_linux_arm64="{sha("linux_arm64")}"',
-              f'SHA256_windows_amd64="{sha("windows_amd64.exe")}"',
-              f'SHA256_windows_arm64="{sha("windows_arm64.exe")}"',
-          ]) + "\n"
-
+          # VERSION and the SHA256_* table are separated by BASE_URL/BIN_DIR and
+          # a comment, so they are patched as two independent blocks.
           sh = Path("trustguard/hooks/trustguard-hook.sh")
+          text = sh.read_text()
+
           text, n = re.subn(
-              r'^VERSION="[^"]*"\n(?:SHA256_[a-z0-9_]+="[a-f0-9]+"\n)+',
-              sh_pins,
-              sh.read_text(),
+              r'^VERSION="[^"]*"$',
+              f'VERSION="{version}"',
+              text,
               count=1,
               flags=re.M,
           )
           if n != 1:
-              raise SystemExit(f"failed to patch {sh}: replacements={n}")
+              raise SystemExit(f"failed to patch VERSION in {sh}: replacements={n}")
+
+          sha_block = "".join(
+              f'SHA256_{key}="{sha(suffix)}"\n'
+              for key, suffix in [
+                  ("darwin_amd64", "darwin_amd64"),
+                  ("darwin_arm64", "darwin_arm64"),
+                  ("linux_amd64", "linux_amd64"),
+                  ("linux_arm64", "linux_arm64"),
+                  ("windows_amd64", "windows_amd64.exe"),
+                  ("windows_arm64", "windows_arm64.exe"),
+              ]
+          )
+          text, n = re.subn(
+              r'^(?:SHA256_[a-z0-9_]+="[a-f0-9]*"\n)+',
+              sha_block,
+              text,
+              count=1,
+              flags=re.M,
+          )
+          if n != 1:
+              raise SystemExit(f"failed to patch SHA256 table in {sh}: replacements={n}")
           sh.write_text(text)
 
           ps = Path("trustguard/hooks/trustguard-hook.ps1")
