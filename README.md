@@ -43,12 +43,14 @@ picks one of two actions:
 
 | State of `main` | Action |
 |---|---|
-| Pinned version is already tagged | **prepare** — bump the patch, build, pin the new checksums and open or refresh the `chore(release): vX.Y.Z` pull request |
+| Pinned version is already tagged | **prepare** — bump the patch, build, pin the new checksums and push the `release/vX.Y.Z` branch |
 | Pinned version has no tag | **publish** — rebuild, verify the pins still match, tag and publish the GitHub Release |
 
-Shipping is therefore: merge your work (the release PR refreshes itself on top
-of it), then approve and merge that release PR. Bump the minor or major by
-hand in `plugin.json` and the workflow pins that version instead of a patch.
+Shipping is therefore: merge your work, open the release pull request from the
+link the run summary leaves (Actions cannot open it — the org forbids that —
+but an already-open one keeps refreshing itself), then approve and merge it.
+Bump the minor or major by hand in `plugin.json` and the workflow pins that
+version instead of a patch.
 
 The publish job rebuilds rather than trusting what the pull request measured,
 and fails if any hash moved — the released assets always match the checksums
