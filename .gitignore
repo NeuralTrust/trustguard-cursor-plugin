@@ -5,6 +5,7 @@ package.json
 
 # Build artefacts
 bin/
+dist/
 *.exe
 
 # Editor / OS

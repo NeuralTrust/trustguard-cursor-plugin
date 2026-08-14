@@ -1,10 +1,16 @@
-.PHONY: build test lint install-local uninstall-local validate-marketplace
+.PHONY: build dist test lint install-local uninstall-local validate-marketplace
 
 LOCAL_PLUGIN_DIR ?= $(HOME)/.cursor/plugins/local/trustguard
+VERSION ?= dev
 
 build: ## Build the trustguard-cursor hook binary into ./bin/
 	@mkdir -p bin
 	go build -trimpath -ldflags "-s -w" -o bin/trustguard-cursor ./cli
+
+# Only the workflow's pinned Go version produces the checksums that end up in
+# the bootstraps; locally this is for smoke-testing the cross-compile.
+dist: ## Cross-compile every release binary into ./dist/ (VERSION=X.Y.Z)
+	@scripts/build-dist.sh $(VERSION)
 
 test: ## Run the test suite
 	go test -race ./cli/
