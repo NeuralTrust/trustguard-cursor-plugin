@@ -1,12 +1,16 @@
 {
   "name": "trustguard",
+  "displayName": "TrustGuard",
   "description": "AI firewall for the Cursor agent: evaluates prompts, tool calls and tool results with NeuralTrust TrustGuard, blocking prompt injection, dangerous commands and sensitive-data leaks before they execute.",
   "version": "0.1.1",
   "author": {
-    "name": "NeuralTrust",
-    "url": "https://neuraltrust.ai"
+    "name": "NeuralTrust"
   },
+  "publisher": "NeuralTrust",
   "homepage": "https://neuraltrust.ai",
-  "logo": "assets/logo.svg",
-  "keywords": ["security", "firewall", "trustguard", "enterprise"]
+  "repository": "https://github.com/NeuralTrust/trustguard-cursor-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["security", "firewall", "trustguard", "enterprise", "hooks"],
+  "category": "security",
+  "logo": "assets/logo.svg"
 }

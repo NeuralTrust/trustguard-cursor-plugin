@@ -1,85 +1,30 @@
-# TrustGuard plugin for Cursor
+# TrustGuard for Cursor
 
-Cursor plugin bundling the TrustGuard AI-firewall hooks: every prompt, shell
-command, MCP tool call and file read the Cursor agent performs is evaluated by
-[TrustGuard](https://neuraltrust.ai) before it executes, and blocked, gated or
-allowed according to your TrustGuard policy.
+AI firewall for the Cursor agent, powered by
+[NeuralTrust TrustGuard](https://neuraltrust.ai).
 
-Contents:
+An admin creates **one Cursor collector** in NeuralTrust. IT deploys that
+collector’s credentials by MDM. Every developer’s Cursor is then gated —
+prompts, tool calls and tool results — without giving them a NeuralTrust
+account.
 
-- `hooks/hooks.json` — registers the three events (`beforeSubmitPrompt`,
-  `preToolUse`, `postToolUse`) against the bootstrap script. `preToolUse` is
-  generic, so one hook covers every tool the agent runs — shell, file reads and
-  writes, MCP calls, subagents — and `postToolUse` sees what each returns.
-- `hooks/trustguard-hook.sh` — bootstrap (macOS/Linux, and Windows under Git
-  Bash): runs `trustguard-cursor` from the PATH when present; otherwise
-  installs the pinned release for the OS/arch into `~/.trustguard/bin` — in the
-  background, so the editor never waits on a download — verifying its SHA-256
-  against the table embedded in the script. Any bootstrap failure fails open
-  with a stderr warning, so an unconfigured machine never loses the editor.
-- `hooks/trustguard-hook.cmd` + `hooks/trustguard-hook.ps1` — Windows
-  bootstrap with the same cascade (PATH → `%USERPROFILE%\.trustguard\bin` →
-  verified download of the `.exe`). The hook command is a polyglot —
-  `sh ./hooks/trustguard-hook.sh || ./hooks/trustguard-hook.cmd` — so one
-  `hooks.json` works everywhere: unix runs the `.sh`; Windows uses Git Bash's
-  `sh` when available and otherwise falls through to the `.cmd`/PowerShell
-  path.
-- `skills/setup-trustguard/` — guided setup: configure the endpoint + API key,
-  verify; covers manual binary install where needed.
+| Cursor event | When it runs | What TrustGuard sees |
+|---|---|---|
+| `beforeSubmitPrompt` | User hits send | The prompt (`llm` / input) |
+| `preToolUse` | Before any tool runs | Shell command (`all`) or tool call (`mcp` / input) |
+| `postToolUse` | After a tool returns | Tool output (`mcp` / output) |
 
-No MDM or manual distribution is required — the first hook event kicks off the
-download and events are evaluated from the moment the binary lands (a second or
-two later); until then they are allowed. (The PowerShell path still needs a
-smoke test on a real Windows machine before publishing.)
+`preToolUse` is generic: Shell, Read, Write, MCP, Task/subagents — one hook
+covers them all. `postToolUse` covers the same surface on the way back
+(indirect prompt injection and DLP on file contents, command output, MCP
+responses).
 
-## Event → evaluation mapping
+## Enterprise rollout
 
-| Cursor event | `protocol` | `direction` | Payload sent | Main detectors |
-|---|---|---|---|---|
-| `beforeSubmitPrompt` | `llm` | `input` | `{"messages":[{role:user, content:prompt}]}` | prompt_guard, data_loss_prevention, prompt_moderation, multiturn_guard |
-| `preToolUse` (Shell) | `all` | `input` | `{"input": command}` | code_sanitation, data_loss_prevention |
-| `preToolUse` (any other tool) | `mcp` | `input` | JSON-RPC `tools/call` (tool name + arguments) | indirect_prompt_injection, prompt_guard |
-| `postToolUse` | `mcp` | `output` | JSON-RPC result carrying the tool output | indirect_prompt_injection, data_loss_prevention |
-
-Verdict mapping: `block` → deny (`continue:false` for prompts) · `transform`
-(PII/secrets found; hooks cannot rewrite content) → `ask` by default ·
-`report` → allow with a notice · `allow`/gate `skip` → allow.
-
-Neither event enforces `ask`: `beforeSubmitPrompt` only submits or silently
-discards, and Cursor accepts but ignores `ask` on `preToolUse`. So an `ask`
-verdict lets the action through and surfaces the warning; set
-`transform_action: "deny"` to stop it instead.
-
-`postToolUse` fires after the tool has already run and cannot revoke it, so a
-finding there is injected as `additional_context` telling the agent to treat the
-result as untrusted — never as a block it could not enforce. Disable it with
-`{"events": {"postToolUse": false}}` if you only want pre-execution control.
-`session_id` is Cursor's conversation id; `consumer_id` prefers the Cursor
-account email from the hook payload (`cursor:<email>`), falling back to the OS
-user; `attributes.collector.type = "ide"` lets policies target IDE traffic.
-
-## Runtime configuration
-
-Enterprise model: a TrustGuard admin creates **one Cursor collector** for the
-org in NeuralTrust. Employees never need a NeuralTrust account — IT deploys the
-org key by MDM and Cursor is protected for everyone.
-
-Configuration is layered:
-
-1. **Managed (MDM) file**: `/etc/trustguard/cursor.json` (Linux),
-   `/Library/Application Support/TrustGuard/cursor.json` (macOS),
-   `%ProgramData%\TrustGuard\cursor.json` (Windows); path override:
-   `TRUSTGUARD_CURSOR_SYSTEM_CONFIG`.
-2. **User file**: `~/.trustguard/cursor.json` (`TRUSTGUARD_CURSOR_CONFIG`
-   overrides the path).
-3. **Environment variables**.
-
-When the managed file ships an `api_key`, the install is in **managed mode**:
-`api_key`, `data_url` and `fail_mode` are locked — user file and env cannot
-replace them (a developer cannot disable or redirect the org firewall). Soft
-prefs (`timeout_ms`, `transform_action`, `events`, `consumer_id`) still layer.
-
-Recommended MDM payload:
+1. In NeuralTrust, create a **Cursor** collector on the org’s guard and mint a
+   collector API key (`tgk_…`).
+2. Deploy this plugin to employees (marketplace, MDM, or image).
+3. Push the managed config with MDM (or your fleet tool):
 
 ```json
 {
@@ -89,28 +34,129 @@ Recommended MDM payload:
 }
 ```
 
-| Env | File key | Default | Meaning |
+| OS | Managed config path |
+|---|---|
+| macOS | `/Library/Application Support/TrustGuard/cursor.json` |
+| Linux | `/etc/trustguard/cursor.json` |
+| Windows | `%ProgramData%\TrustGuard\cursor.json` |
+
+That’s it. Developers never configure anything. Attribution uses the Cursor
+account email from each hook payload (`consumer_id = cursor:<email>`), so you
+can audit and route policy per person without per-user credentials.
+
+### Managed mode
+
+When the managed file ships an `api_key`, the install is **managed**:
+
+- Locked: `api_key`, `data_url`, `fail_mode` — user file and env cannot replace
+  them. A developer cannot disable or redirect the org firewall.
+- Soft prefs still layer: `timeout_ms`, `transform_action`, `events`,
+  `consumer_id`.
+
+## What each event does
+
+| Event | Protocol | Direction | Payload | Typical detectors |
+|---|---|---|---|---|
+| `beforeSubmitPrompt` | `llm` | `input` | user message | prompt_guard, DLP, prompt_moderation, multiturn_guard |
+| `preToolUse` (Shell) | `all` | `input` | `{"input": "<command>"}` | code_sanitation, DLP |
+| `preToolUse` (other) | `mcp` | `input` | JSON-RPC `tools/call` | indirect_prompt_injection, prompt_guard |
+| `postToolUse` | `mcp` | `output` | JSON-RPC tool result | indirect_prompt_injection, DLP |
+
+### Verdicts
+
+| TrustGuard status | Prompt (`beforeSubmitPrompt`) | Tool call (`preToolUse`) | Tool result (`postToolUse`) |
 |---|---|---|---|
-| `TRUSTGUARD_DATA_URL` | `data_url` | `http://localhost:8081` | data-plane base URL (locked when managed) |
-| `TRUSTGUARD_API_KEY` | `api_key` | — | org Cursor collector API key (`tgk_…`; locked when managed) |
-| `TRUSTGUARD_FAIL_MODE` | `fail_mode` | `open` | `open` allows / `closed` denies on errors or timeouts (locked when managed) |
-| `TRUSTGUARD_TRANSFORM_ACTION` | `transform_action` | `ask` | hook answer for a `transform` verdict |
-| `TRUSTGUARD_TIMEOUT_MS` | `timeout_ms` | `5000` | per-request timeout |
-| `TRUSTGUARD_CONSUMER_ID` | `consumer_id` | `cursor:<email\|os user>` | fallback anomaly/policy anchor; runtime prefers Cursor `user_email` |
-| — | `max_content_bytes` | `262144` | file/tool content clip size |
-| — | `report_notice` | `true` | notice on report-only findings |
-| — | `events` | all enabled | disable events, e.g. `{"postToolUse": false}` |
+| `block` | Dropped — `TrustGuard blocked this action` | Denied | Context injected: treat result as untrusted |
+| `transform` | Submitted with warning (or dropped if `transform_action=deny`) | Allowed with warning (or denied if `transform_action=deny`) | Context injected when configured to deny/ask |
+| `report` | Allowed, optional notice | Allowed, optional notice | No-op unless notice applies |
+| `allow` / `skip` | Allowed | Allowed | No-op |
 
-Without an API key the hook logs to stderr and **allows everything** — an
-unconfigured install never bricks the editor.
+Notes:
 
-## Release model
+- Cursor has no `ask` for prompts, and does not enforce `ask` on `preToolUse`.
+  Default `transform_action` is `ask` → the action proceeds with a warning.
+  Set `transform_action: "deny"` to hard-stop PII/secrets.
+- `postToolUse` cannot revoke a tool that already ran. Findings become
+  `additional_context` for the agent, not a fake deny.
 
-This repository is self-contained: the binary source lives in
-[`../cli/`](../cli/), and pushing a `vX.Y.Z` tag runs the `release` workflow —
-cross-compiles the six platform binaries, publishes them as a GitHub Release
-here (the URLs the bootstraps download from), and prints the `VERSION` +
-checksum blocks to commit into both bootstrap scripts (plus the `plugin.json`
-version bump). The pinned checksums in the reviewed plugin are what make the
-auto-downloaded binary trustworthy — never ship a release without updating
-them.
+## Local / BYO setup
+
+Only needed when MDM is not in play (dev machines, pilots).
+
+1. Install the plugin (marketplace, local repo, or `make install-local`).
+2. Write `~/.trustguard/cursor.json` (`chmod 600`):
+
+```json
+{
+  "data_url": "https://trustguard.example.com",
+  "api_key": "tgk_REPLACE_ME",
+  "fail_mode": "closed"
+}
+```
+
+3. Smoke-test:
+
+```bash
+echo '{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"echo hello"},"user_email":"you@company.com"}' \
+  | trustguard-cursor hook
+# → {"permission":"allow"}
+```
+
+The first hook event downloads the pinned `trustguard-cursor` binary into
+`~/.trustguard/bin` in the background (SHA-256 verified). Until it lands,
+events fail open so the editor never bricks. A binary already on `PATH` always
+wins (manual / MDM installs).
+
+The plugin skill `setup-trustguard` walks through the same flow inside Cursor.
+
+## Configuration reference
+
+Layer order: managed file → user file → environment.
+
+| Env | File key | Default | Notes |
+|---|---|---|---|
+| `TRUSTGUARD_DATA_URL` | `data_url` | `http://localhost:8081` | Locked when managed |
+| `TRUSTGUARD_API_KEY` | `api_key` | — | Org Cursor collector key (`tgk_…`). Locked when managed |
+| `TRUSTGUARD_FAIL_MODE` | `fail_mode` | `open` | `closed` recommended in enterprise. Locked when managed |
+| `TRUSTGUARD_TRANSFORM_ACTION` | `transform_action` | `ask` | `ask` / `deny` / `allow` for `transform` verdicts |
+| `TRUSTGUARD_TIMEOUT_MS` | `timeout_ms` | `5000` | Per `/v1/evaluate` call |
+| `TRUSTGUARD_CONSUMER_ID` | `consumer_id` | `cursor:<os user>` | Fallback only — runtime prefers Cursor `user_email` |
+| — | `max_content_bytes` | `262144` | Clip size for tool output sent to the guard |
+| — | `report_notice` | `true` | Surface report-only findings to the user |
+| — | `events` | all on | e.g. `{"postToolUse": false}` |
+
+Path overrides: `TRUSTGUARD_CURSOR_SYSTEM_CONFIG`, `TRUSTGUARD_CURSOR_CONFIG`.
+
+No API key → stderr warning and **allow everything** (fail open).
+
+## Plugin layout
+
+```
+trustguard/
+├── .cursor-plugin/plugin.json   # manifest + logo
+├── assets/logo.svg
+├── hooks/
+│   ├── hooks.json               # beforeSubmitPrompt, preToolUse, postToolUse
+│   ├── trustguard-hook.sh       # macOS / Linux (+ Git Bash)
+│   ├── trustguard-hook.cmd      # Windows entry (POSIX fail-open half of the polyglot)
+│   └── trustguard-hook.ps1      # Windows bootstrap
+└── skills/setup-trustguard/     # guided setup inside Cursor
+```
+
+The hook command is a polyglot —
+`sh ./hooks/trustguard-hook.sh || ./hooks/trustguard-hook.cmd` — so one
+`hooks.json` works on every OS.
+
+## Developing this repo
+
+```bash
+make build          # ./bin/trustguard-cursor
+make test
+make install-local  # copy into ~/.cursor/plugins/local/trustguard
+                    # (Cursor rejects symlinks that point outside that tree)
+```
+
+Binary source: [`../cli/`](../cli/). Tag `vX.Y.Z` runs the release workflow:
+cross-compiles six platform binaries, publishes a GitHub Release, and prints
+the `VERSION` + SHA-256 block to paste into both bootstraps (and bump
+`plugin.json`). Never ship a release without updating those pinned checksums.

@@ -1,4 +1,4 @@
-.PHONY: build test lint install-local uninstall-local
+.PHONY: build test lint install-local uninstall-local validate-marketplace
 
 LOCAL_PLUGIN_DIR ?= $(HOME)/.cursor/plugins/local/trustguard
 
@@ -23,3 +23,7 @@ install-local: ## Install the plugin into ~/.cursor/plugins/local for testing
 uninstall-local: ## Remove the locally installed plugin
 	@rm -rf "$(LOCAL_PLUGIN_DIR)"
 	@echo "removed $(LOCAL_PLUGIN_DIR)"
+
+validate-marketplace: ## Validate manifests against Cursor marketplace schemas
+	@npm i --no-save --silent ajv@8 ajv-formats@3 >/dev/null
+	@node scripts/validate-marketplace.mjs

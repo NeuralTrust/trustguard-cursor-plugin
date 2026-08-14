@@ -10,7 +10,7 @@
     {
       "name": "trustguard",
       "source": "trustguard",
-      "description": "AI firewall for the Cursor agent: blocks prompt injection, dangerous commands and sensitive-data leaks via TrustGuard."
+      "description": "AI firewall for the Cursor agent: evaluates prompts, tool calls and tool results with TrustGuard."
     }
   ]
 }

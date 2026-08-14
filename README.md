@@ -1,22 +1,49 @@
 # NeuralTrust plugins for Cursor
 
-Cursor plugin marketplace for [NeuralTrust](https://neuraltrust.ai). Install in
-Cursor via **Customize → Plugins → Add → From Local Repo** (a clone of this
-repository) or with the repository URL where supported.
+Marketplace of [NeuralTrust](https://neuraltrust.ai) plugins for
+[Cursor](https://cursor.com).
 
 | Plugin | What it does |
 |---|---|
-| [`trustguard/`](./trustguard/) | AI firewall for the Cursor agent: every prompt, shell command, MCP tool call and file read is evaluated by TrustGuard before it executes — prompt injection, dangerous commands and sensitive-data leaks are blocked per policy. |
+| [`trustguard/`](./trustguard/) | AI firewall for the Cursor agent. One org collector, MDM-deployed — every developer is protected without a NeuralTrust account. |
 
-See [`trustguard/README.md`](./trustguard/README.md) for configuration
-(TrustGuard endpoint + collector API key) and how the binary bootstrap works.
+## Install
+
+- **Enterprise**: IT deploys the plugin (or marketplace) plus a managed
+  `cursor.json` with the org Cursor collector key. Developers open Cursor and
+  are protected — no NeuralTrust login, no local setup.
+- **Local / BYO**: clone this repo and add it in Cursor via
+  **Customize → Plugins → Add → From Local Repo**, or develop against
+  `~/.cursor/plugins/local/trustguard` (`make install-local`).
+
+Full configuration, hooks and release notes live in
+[`trustguard/README.md`](./trustguard/README.md).
 
 ## Repository layout
 
-- [`trustguard/`](./trustguard/) — the Cursor plugin (hooks, bootstraps, skill).
-- [`cli/`](./cli/) — source of the `trustguard-cursor` hook binary (Go,
-  stdlib-only; it talks exclusively to the TrustGuard data plane
-  `/v1/evaluate`). `make build` / `make test`.
-- [`.github/workflows/`](./.github/workflows/) — CI and the tag-driven
-  release that publishes the platform binaries the plugin bootstraps
-  auto-download (SHA-256 pinned in the reviewed plugin).
+| Path | Role |
+|---|---|
+| [`trustguard/`](./trustguard/) | Cursor plugin (hooks, bootstraps, skill, logo) |
+| [`cli/`](./cli/) | `trustguard-cursor` binary (Go, stdlib-only) — talks to TrustGuard `/v1/evaluate` |
+| [`.github/workflows/`](./.github/workflows/) | CI + tag-driven release of the pinned platform binaries |
+
+```bash
+make build                 # build ./bin/trustguard-cursor
+make test                  # go test -race ./cli/
+make install-local         # copy plugin into ~/.cursor/plugins/local (Cursor rejects out-of-tree symlinks)
+make validate-marketplace  # AJV-validate manifests against Cursor schemas
+```
+
+## Publishing to the Cursor Marketplace
+
+The repo is a multi-plugin marketplace (`neuraltrust`) with one plugin
+(`trustguard`). Submission checklist:
+
+1. `make validate-marketplace` and `make test` pass.
+2. GitHub Release `vX.Y.Z` exists with the six platform binaries and checksums
+   pinned in `trustguard/hooks/trustguard-hook.{sh,ps1}`.
+3. Repo is **public**: https://github.com/NeuralTrust/trustguard-cursor-plugin
+4. Submit the repository URL at
+   [cursor.com/marketplace/publish](https://cursor.com/marketplace/publish).
+
+Cursor reviews every marketplace plugin manually.

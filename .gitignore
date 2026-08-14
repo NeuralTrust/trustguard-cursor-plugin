@@ -1,0 +1,12 @@
+# Local tooling (make validate-marketplace installs ajv --no-save into cwd)
+node_modules/
+package-lock.json
+package.json
+
+# Build artefacts
+bin/
+*.exe
+
+# Editor / OS
+.DS_Store
+*.swp
