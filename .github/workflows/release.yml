@@ -7,10 +7,12 @@
 #   pinned version has no tag  -> publish: rebuild, verify the pins still match,
 #                                 tag and cut the GitHub Release
 #   pinned version is released -> prepare: bump the patch, pin the new
-#                                 checksums, open or refresh the release PR
+#                                 checksums, push the release/vX.Y.Z branch
 #
-# So merging anything into main refreshes the release PR, and merging that PR
-# publishes. State comes from the repo, not from commit messages, so it works
+# So merging anything into main refreshes the release branch, and merging its
+# pull request publishes. The org forbids Actions from opening pull requests,
+# so the first one per release is opened by hand from the link in the run
+# summary. State comes from the repo, not from commit messages, so it works
 # with merge, squash or rebase.
 #
 # Manual run: Actions -> Release -> Run workflow.
@@ -57,13 +59,13 @@ jobs:
           cat "$GITHUB_OUTPUT"
 
   prepare:
-    name: Refresh release PR
+    name: Refresh release branch
     needs: plan
     if: needs.plan.outputs.mode == 'prepare'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
+      pull-requests: read
     env:
       VERSION: ${{ needs.plan.outputs.version }}
     steps:
@@ -83,7 +85,10 @@ jobs:
           python3 scripts/release.py pin "$VERSION"
           git --no-pager diff --stat
 
-      - name: Open or refresh the release PR
+      # The org forbids GitHub Actions from creating pull requests, so the job
+      # pushes the branch and leaves the compare link in the run summary. An
+      # already-open release PR picks the new commit up on its own.
+      - name: Push the release branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -104,23 +109,25 @@ jobs:
           git commit -m "chore(release): v${VERSION}"
           git push --force origin "$BRANCH"
 
-          body="$(cat <<EOF
-          Pins \`v${VERSION}\` across \`plugin.json\`, \`cli/main.go\` and both bootstrap
-          scripts, with the SHA-256 of the binaries built from ${GITHUB_SHA}.
-
-          Merging this publishes the release: the workflow rebuilds the binaries, checks
-          they still hash to the pins below, then tags \`v${VERSION}\` and uploads them.
-
-          Opened automatically by the Release workflow.
-          EOF
-          )"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1"
           number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           if [ -n "$number" ]; then
-            gh pr edit "$number" --title "chore(release): v${VERSION}" --body "$body"
-          else
-            gh pr create --base main --head "$BRANCH" \
-              --title "chore(release): v${VERSION}" --body "$body"
+            echo "::notice::Release PR #${number} updated with the pins for v${VERSION}"
+            {
+              echo "### Release v${VERSION} refreshed"
+              echo
+              echo "Pull request [#${number}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/pull/${number}) now carries the pins built from \`${GITHUB_SHA}\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+          echo "::notice::Open the release PR for v${VERSION}: ${url}"
+          {
+            echo "### Release v${VERSION} is ready to propose"
+            echo
+            echo "[Open the release pull request](${url}) — merging it rebuilds the binaries,"
+            echo "checks they still hash to the pins on the branch, then tags \`v${VERSION}\`"
+            echo "and publishes them."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Tag and publish
