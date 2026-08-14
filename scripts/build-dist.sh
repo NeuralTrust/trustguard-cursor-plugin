@@ -26,8 +26,11 @@ for platform in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 
     esac
     artifact="$OUT/trustguard-cursor_${VERSION}_${GOOS}_${GOARCH}${ext}"
     echo "building $artifact"
+    # -buildvcs=false: Go otherwise stamps the commit and a dirty-tree flag
+    # into the binary, which would change every checksum between the run that
+    # pins them (tree dirty from the version bump) and the run that publishes.
     CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-        go build -trimpath -ldflags "-s -w" -o "$artifact" ./cli
+        go build -buildvcs=false -trimpath -ldflags "-s -w" -o "$artifact" ./cli
 done
 
 cd "$OUT"
