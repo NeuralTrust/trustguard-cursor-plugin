@@ -25,7 +25,8 @@ Full configuration, hooks and release notes live in
 |---|---|
 | [`trustguard/`](./trustguard/) | Cursor plugin (hooks, bootstraps, skill, logo) |
 | [`cli/`](./cli/) | `trustguard-cursor` binary (Go, stdlib-only) — talks to TrustGuard `/v1/evaluate` |
-| [`.github/workflows/`](./.github/workflows/) | CI + tag-driven release of the pinned platform binaries |
+| [`.github/workflows/`](./.github/workflows/) | CI + the release state machine that pins and publishes the platform binaries |
+| [`scripts/`](./scripts/) | Release plumbing (`release.py`, `build-dist.sh`) and manifest validation |
 
 ```bash
 make build                 # build ./bin/trustguard-cursor
@@ -36,20 +37,29 @@ make validate-marketplace  # AJV-validate manifests against Cursor schemas
 
 ## Releasing the binary
 
-Every push to `main` (except commits marked `[skip release]`) runs the
-**Release** workflow:
+`main` requires a pull request, so the **Release** workflow never writes to it.
+On every push it compares the version pinned in the repo with the `v*` tags and
+picks one of two actions:
 
-1. Bumps the patch version from the latest `v*` tag
-2. Builds the six platform binaries
-3. Pins `VERSION` + SHA-256 into the bootstrap scripts and bumps `plugin.json`
-4. Commits `chore(release): vX.Y.Z [skip release]`, tags, and publishes the
-   GitHub Release
+| State of `main` | Action |
+|---|---|
+| Pinned version is already tagged | **prepare** — bump the patch, build, pin the new checksums and open or refresh the `chore(release): vX.Y.Z` pull request |
+| Pinned version has no tag | **publish** — rebuild, verify the pins still match, tag and publish the GitHub Release |
 
-Manual run: **Actions → Release → Run workflow**. Skip one push by including
-`[skip release]` in the commit message.
+Shipping is therefore: merge your work (the release PR refreshes itself on top
+of it), then approve and merge that release PR. Bump the minor or major by
+hand in `plugin.json` and the workflow pins that version instead of a patch.
 
-If `main` is branch-protected, allow `github-actions[bot]` to push (or the
-workflow cannot write the pin commit).
+The publish job rebuilds rather than trusting what the pull request measured,
+and fails if any hash moved — the released assets always match the checksums
+the bootstraps verify. That reproducibility relies on the exact `GO_VERSION`
+pinned in the workflow; raise it together with the `go` directive in `go.mod`.
+
+Manual run: **Actions → Release → Run workflow**.
+
+```bash
+make dist VERSION=0.1.2   # same cross-compile the workflow runs, into ./dist/
+```
 
 ## Publishing to the Cursor Marketplace
 

@@ -1,16 +1,19 @@
-# Auto-release trustguard-cursor on every push to main.
+# Release trustguard-cursor without ever pushing to a protected branch.
 #
-# Flow:
-#   1. Bump patch version from the latest v* tag (or start at 0.1.0)
-#   2. Write the new version into plugin.json + cli/main.go
-#   3. Cross-compile the six platform binaries and compute SHA-256
-#   4. Pin VERSION + checksums into the bootstrap scripts
-#   5. Commit as chore(release): vX.Y.Z [skip release], tag, push
-#   6. Publish the GitHub Release with the binaries
+# `main` is covered by the org ruleset main-rule (pull request + 1 approval),
+# so the workflow can not commit the pinned bootstraps itself. It instead runs
+# as a state machine over the version in plugin.json and the v* tags:
 #
-# The follow-up commit carries [skip release] so it does not loop. Manual
-# runs: Actions → Release → Run workflow. Skip a push with [skip release]
-# in the commit message.
+#   pinned version has no tag  -> publish: rebuild, verify the pins still match,
+#                                 tag and cut the GitHub Release
+#   pinned version is released -> prepare: bump the patch, pin the new
+#                                 checksums, open or refresh the release PR
+#
+# So merging anything into main refreshes the release PR, and merging that PR
+# publishes. State comes from the repo, not from commit messages, so it works
+# with merge, squash or rebase.
+#
+# Manual run: Actions -> Release -> Run workflow.
 
 name: Release
 
@@ -24,207 +27,155 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  # Pinned so the publish job rebuilds binaries byte-identical to the ones the
+  # prepare job measured. GOTOOLCHAIN=local forbids silently switching to a
+  # newer toolchain, so raising the go directive in go.mod fails the build
+  # until GO_VERSION is raised with it.
+  GO_VERSION: '1.26.5'
+  GOTOOLCHAIN: local
 
 jobs:
-  release:
-    name: Build, pin & release
+  plan:
+    name: Decide next action
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' &&
-       !contains(github.event.head_commit.message, '[skip release]') &&
-       !startsWith(github.event.head_commit.message, 'chore(release):'))
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      version: ${{ steps.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Next version
-        id: ver
+      - id: plan
         run: |
           set -euo pipefail
           git fetch --tags --force
-          latest="$(git tag -l 'v*' --sort=-v:refname | head -n1 || true)"
-          if [ -z "$latest" ]; then
-            VERSION="0.1.0"
-          else
-            raw="${latest#v}"
-            IFS=. read -r major minor patch <<EOF
-          $raw
-          EOF
-            VERSION="${major}.${minor}.$((patch + 1))"
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Next release: v$VERSION (previous: ${latest:-none})"
+          python3 scripts/release.py plan >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
 
-      - name: Bump version in source
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
+  prepare:
+    name: Refresh release PR
+    needs: plan
+    if: needs.plan.outputs.mode == 'prepare'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Bump, build and pin
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import os, re
-          version = os.environ["VERSION"]
+          python3 scripts/release.py set-version "$VERSION"
+          scripts/build-dist.sh "$VERSION"
+          python3 scripts/release.py pin "$VERSION"
+          git --no-pager diff --stat
 
-          plugin = Path("trustguard/.cursor-plugin/plugin.json")
-          text, n = re.subn(r'"version":\s*"[^"]*"', f'"version": "{version}"', plugin.read_text(), count=1)
-          if n != 1:
-              raise SystemExit("failed to bump plugin.json version")
-          plugin.write_text(text)
-
-          main = Path("cli/main.go")
-          text, n = re.subn(
-              r'const integrationVersion = "[^"]*"',
-              f'const integrationVersion = "{version}"',
-              main.read_text(),
-              count=1,
-          )
-          if n != 1:
-              raise SystemExit("failed to bump integrationVersion")
-          main.write_text(text)
-          PY
-
-      - name: Cross-compile
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.ver.outputs.version }}"
-          mkdir -p dist
-          for platform in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
-            GOOS="${platform%/*}"
-            GOARCH="${platform#*/}"
-            ext=""
-            [ "$GOOS" = "windows" ] && ext=".exe"
-            out="dist/trustguard-cursor_${VERSION}_${GOOS}_${GOARCH}${ext}"
-            echo "building $out"
-            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-              go build -trimpath -ldflags "-s -w" -o "$out" ./cli
-          done
-          (cd dist && sha256sum -- * > SHA256SUMS)
-          cat dist/SHA256SUMS
-
-      - name: Pin checksums in bootstraps
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import os, re
-
-          version = os.environ["VERSION"]
-          sums = {}
-          for line in Path("dist/SHA256SUMS").read_text().splitlines():
-              h, name = line.split()
-              sums[name] = h
-
-          def sha(suffix: str) -> str:
-              key = f"trustguard-cursor_{version}_{suffix}"
-              if key not in sums:
-                  raise SystemExit(f"missing {key} in SHA256SUMS")
-              return sums[key]
-
-          # VERSION and the SHA256_* table are separated by BASE_URL/BIN_DIR and
-          # a comment, so they are patched as two independent blocks.
-          sh = Path("trustguard/hooks/trustguard-hook.sh")
-          text = sh.read_text()
-
-          text, n = re.subn(
-              r'^VERSION="[^"]*"$',
-              f'VERSION="{version}"',
-              text,
-              count=1,
-              flags=re.M,
-          )
-          if n != 1:
-              raise SystemExit(f"failed to patch VERSION in {sh}: replacements={n}")
-
-          sha_block = "".join(
-              f'SHA256_{key}="{sha(suffix)}"\n'
-              for key, suffix in [
-                  ("darwin_amd64", "darwin_amd64"),
-                  ("darwin_arm64", "darwin_arm64"),
-                  ("linux_amd64", "linux_amd64"),
-                  ("linux_arm64", "linux_arm64"),
-                  ("windows_amd64", "windows_amd64.exe"),
-                  ("windows_arm64", "windows_arm64.exe"),
-              ]
-          )
-          text, n = re.subn(
-              r'^(?:SHA256_[a-z0-9_]+="[a-f0-9]*"\n)+',
-              sha_block,
-              text,
-              count=1,
-              flags=re.M,
-          )
-          if n != 1:
-              raise SystemExit(f"failed to patch SHA256 table in {sh}: replacements={n}")
-          sh.write_text(text)
-
-          ps = Path("trustguard/hooks/trustguard-hook.ps1")
-          text = ps.read_text()
-          text, n = re.subn(r"\$Version = '[^']*'", f"$Version = '{version}'", text, count=1)
-          if n != 1:
-              raise SystemExit(f"failed to patch Version in {ps}")
-          block = (
-              "$Sha256 = @{\n"
-              f"    'amd64' = '{sha('windows_amd64.exe')}'\n"
-              f"    'arm64' = '{sha('windows_arm64.exe')}'\n"
-              "}"
-          )
-          text, n = re.subn(r"\$Sha256 = @\{[^}]+\}", block, text, count=1, flags=re.S)
-          if n != 1:
-              raise SystemExit(f"failed to patch Sha256 in {ps}")
-          ps.write_text(text)
-          PY
-
-      - name: Commit pins, tag & push
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.ver.outputs.version }}"
-          TAG="${{ steps.ver.outputs.tag }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            trustguard/hooks/trustguard-hook.sh \
-            trustguard/hooks/trustguard-hook.ps1 \
-            trustguard/.cursor-plugin/plugin.json \
-            cli/main.go
-          if git diff --cached --quiet; then
-            echo "pins already up to date — nothing to commit"
-          else
-            git commit -m "chore(release): v${VERSION} [skip release]"
-          fi
-          # Retag only when the annotated tag is missing (normal path) or this is a
-          # manual re-run that already created it mid-failure.
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            git tag -d "$TAG"
-          fi
-          git tag -a "$TAG" -m "trustguard-cursor ${VERSION}"
-          git push origin HEAD:main
-          git push origin "$TAG"
-
-      - name: Create GitHub Release
+      - name: Open or refresh the release PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.ver.outputs.version }}"
-          TAG="${{ steps.ver.outputs.tag }}"
+          BRANCH="release/v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add -- \
+            trustguard/.cursor-plugin/plugin.json \
+            cli/main.go \
+            trustguard/hooks/trustguard-hook.sh \
+            trustguard/hooks/trustguard-hook.ps1
+          if git diff --cached --quiet; then
+            echo "main already carries the pins for v${VERSION} — nothing to propose"
+            exit 0
+          fi
+          git commit -m "chore(release): v${VERSION}"
+          git push --force origin "$BRANCH"
+
+          body="$(cat <<EOF
+          Pins \`v${VERSION}\` across \`plugin.json\`, \`cli/main.go\` and both bootstrap
+          scripts, with the SHA-256 of the binaries built from ${GITHUB_SHA}.
+
+          Merging this publishes the release: the workflow rebuilds the binaries, checks
+          they still hash to the pins below, then tags \`v${VERSION}\` and uploads them.
+
+          Opened automatically by the Release workflow.
+          EOF
+          )"
+          number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "chore(release): v${VERSION}" --body "$body"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "chore(release): v${VERSION}" --body "$body"
+          fi
+
+  publish:
+    name: Tag and publish
+    needs: plan
+    if: needs.plan.outputs.mode == 'publish'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: v${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Test
+        run: go test -race ./cli/
+
+      - name: Rebuild and verify the pins
+        run: |
+          set -euo pipefail
+          scripts/build-dist.sh "$VERSION"
+          python3 scripts/release.py verify "$VERSION"
+
+      - name: Tag
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "${TAG} already tagged — reusing it"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "trustguard-cursor ${VERSION}"
+          git push origin "$TAG"
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+          fi
           gh release create "$TAG" dist/* \
             --title "trustguard-cursor ${VERSION}" \
             --notes "$(cat <<EOF
           Automated release from \`main\`.
 
-          TrustGuard integration binary for Cursor agent hooks. Verify downloads against \`SHA256SUMS\`.
-
-          The plugin bootstraps in this commit are already pinned to **${VERSION}**.
+          TrustGuard integration binary for Cursor agent hooks. Verify downloads against
+          \`SHA256SUMS\`; the plugin bootstraps on this tag are pinned to the same hashes.
           EOF
           )"
