@@ -140,6 +140,45 @@ if (!existsSync(marketplacePath)) {
       }
     }
 
+    // MCP config: discover mcp.json (or manifest mcpServers path) and ensure
+    // every ${VAR} placeholder is declared under plugin.json variables.
+    const mcpRel =
+      typeof manifest.mcpServers === "string"
+        ? manifest.mcpServers
+        : existsSync(join(pluginDir, "mcp.json"))
+          ? "mcp.json"
+          : null;
+    if (mcpRel) {
+      const mcpPath = join(pluginDir, mcpRel);
+      if (!existsSync(mcpPath)) {
+        passed = fail(`${entry.name}: mcpServers path missing: ${mcpRel}`);
+      } else {
+        const mcpRaw = readFileSync(mcpPath, "utf8");
+        try {
+          loadJSON(mcpPath);
+          ok(`${entry.name} ${mcpRel} JSON`);
+        } catch (e) {
+          passed = fail(`${entry.name}: ${mcpRel} invalid JSON: ${e.message}`);
+        }
+        const placeholders = [...mcpRaw.matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)].map(
+          (m) => m[1]
+        );
+        const declared = new Set(
+          Object.keys(manifest.variables?.properties ?? {})
+        );
+        for (const name of new Set(placeholders)) {
+          if (!declared.has(name)) {
+            passed = fail(
+              `${entry.name}: ${mcpRel} uses \${${name}} but variables.properties lacks it`
+            );
+          }
+        }
+        if (placeholders.length && declared.size) {
+          ok(`${entry.name} MCP variable placeholders declared`);
+        }
+      }
+    }
+
     if (!existsSync(join(pluginDir, "README.md")) && !existsSync(join(root, "README.md"))) {
       passed = fail(`${entry.name}: no README.md`);
     } else {
