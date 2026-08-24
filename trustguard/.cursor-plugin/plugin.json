@@ -1,7 +1,7 @@
 {
   "name": "trustguard",
-  "displayName": "TrustGuard",
-  "description": "AI firewall for the Cursor agent: evaluates prompts, tool calls and tool results with NeuralTrust TrustGuard, blocking prompt injection, dangerous commands and sensitive-data leaks before they execute.",
+  "displayName": "NeuralTrust",
+  "description": "NeuralTrust for Cursor: TrustGuard AI firewall (hooks) plus TrustGate MCP Gateway tools. One plugin for security and aggregated MCP access.",
   "version": "0.1.2",
   "author": {
     "name": "NeuralTrust"
@@ -10,7 +10,38 @@
   "homepage": "https://neuraltrust.ai",
   "repository": "https://github.com/NeuralTrust/trustguard-cursor-plugin",
   "license": "Apache-2.0",
-  "keywords": ["security", "firewall", "trustguard", "enterprise", "hooks"],
+  "keywords": [
+    "security",
+    "firewall",
+    "trustguard",
+    "trustgate",
+    "mcp",
+    "gateway",
+    "enterprise",
+    "hooks"
+  ],
   "category": "security",
-  "logo": "assets/logo.svg"
+  "logo": "assets/logo.svg",
+  "mcpServers": "mcp.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "TRUSTGATE_MCP_URL": {
+        "type": "string",
+        "title": "TrustGate MCP URL",
+        "description": "Full MCP endpoint from the console Connect tab, e.g. https://{host}/{consumer-slug}/mcp. Required to enable the MCP Gateway."
+      },
+      "TRUSTGATE_MCP_API_KEY": {
+        "type": "string",
+        "title": "TrustGate MCP API key",
+        "description": "Consumer API key for X-AG-API-Key. Leave empty when the consumer uses OAuth (Cursor will open the login flow). Not the TrustGuard tgk_… collector key."
+      },
+      "TRUSTGATE_GATEWAY_SLUG": {
+        "type": "string",
+        "title": "TrustGate gateway slug",
+        "description": "Optional X-AG-Gateway-Slug for hybrid / private data planes. Leave empty on SaaS when the host already identifies the gateway."
+      }
+    },
+    "required": ["TRUSTGATE_MCP_URL"]
+  }
 }

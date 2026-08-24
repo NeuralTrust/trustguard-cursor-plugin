@@ -5,25 +5,25 @@ Marketplace of [NeuralTrust](https://neuraltrust.ai) plugins for
 
 | Plugin | What it does |
 |---|---|
-| [`trustguard/`](./trustguard/) | AI firewall for the Cursor agent. One org collector, MDM-deployed — every developer is protected without a NeuralTrust account. |
+| [`trustguard/`](./trustguard/) | **NeuralTrust** — TrustGuard AI firewall (hooks) **and** TrustGate MCP Gateway (remote MCP tools). One install for security + aggregated tools. |
 
 ## Install
 
-- **Enterprise**: IT deploys the plugin (or marketplace) plus a managed
-  `cursor.json` with the org Cursor collector key. Developers open Cursor and
-  are protected — no NeuralTrust login, no local setup.
+- **Enterprise / Teams**: IT deploys the plugin (Team Marketplace or marketplace)
+  plus:
+  - managed `cursor.json` with the org Cursor collector key (`tgk_…`) for the firewall
+  - plugin variables for the MCP URL (and API key if not OAuth)
 - **Local / BYO**: clone this repo and add it in Cursor via
   **Customize → Plugins → Add → From Local Repo**, or develop against
   `~/.cursor/plugins/local/trustguard` (`make install-local`).
 
-Full configuration, hooks and release notes live in
-[`trustguard/README.md`](./trustguard/README.md).
+Full configuration lives in [`trustguard/README.md`](./trustguard/README.md).
 
 ## Repository layout
 
 | Path | Role |
 |---|---|
-| [`trustguard/`](./trustguard/) | Cursor plugin (hooks, bootstraps, skill, logo) |
+| [`trustguard/`](./trustguard/) | Cursor plugin (hooks, MCP, bootstraps, skill, logo) |
 | [`cli/`](./cli/) | `trustguard-cursor` binary (Go, stdlib-only) — talks to TrustGuard `/v1/evaluate` |
 | [`.github/workflows/`](./.github/workflows/) | CI + the release state machine that pins and publishes the platform binaries |
 | [`scripts/`](./scripts/) | Release plumbing (`release.py`, `build-dist.sh`) and manifest validation |
@@ -60,13 +60,13 @@ pinned in the workflow; raise it together with the `go` directive in `go.mod`.
 Manual run: **Actions → Release → Run workflow**.
 
 ```bash
-make dist VERSION=0.1.2   # same cross-compile the workflow runs, into ./dist/
+make dist VERSION=0.2.0   # same cross-compile the workflow runs, into ./dist/
 ```
 
 ## Publishing to the Cursor Marketplace
 
 The repo is a multi-plugin marketplace (`neuraltrust`) with one plugin
-(`trustguard` / display name **TrustGuard**). Submission checklist:
+(`trustguard` / display name **NeuralTrust**). Submission checklist:
 
 1. `make validate-marketplace` and `make test` pass.
 2. A recent GitHub Release exists (created automatically from `main`).

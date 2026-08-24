@@ -4,13 +4,13 @@
     "name": "NeuralTrust"
   },
   "metadata": {
-    "description": "NeuralTrust plugins for Cursor: TrustGuard AI firewall for the Cursor agent."
+    "description": "NeuralTrust plugins for Cursor: TrustGuard AI firewall and TrustGate MCP Gateway."
   },
   "plugins": [
     {
       "name": "trustguard",
       "source": "trustguard",
-      "description": "AI firewall for the Cursor agent: evaluates prompts, tool calls and tool results with TrustGuard."
+      "description": "NeuralTrust for Cursor — TrustGuard firewall (hooks) and TrustGate MCP Gateway tools."
     }
   ]
 }

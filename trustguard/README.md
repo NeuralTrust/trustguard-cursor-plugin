@@ -1,30 +1,27 @@
-# TrustGuard for Cursor
+# NeuralTrust for Cursor
 
-AI firewall for the Cursor agent, powered by
-[NeuralTrust TrustGuard](https://neuraltrust.ai).
+[NeuralTrust](https://neuraltrust.ai) in one Cursor plugin:
 
-An admin creates **one Cursor collector** in NeuralTrust. IT deploys that
-collector’s credentials by MDM. Every developer’s Cursor is then gated —
-prompts, tool calls and tool results — without giving them a NeuralTrust
-account.
+1. **TrustGuard** — AI firewall on agent hooks (prompts, tool calls, tool results).
+2. **TrustGate MCP Gateway** — remote MCP tools through your org’s MCP plane.
 
-| Cursor event | When it runs | What TrustGuard sees |
+| Surface | When it runs | Backend |
 |---|---|---|
-| `beforeSubmitPrompt` | User hits send | The prompt (`llm` / input) |
-| `preToolUse` | Before any tool runs | Shell command (`all`) or tool call (`mcp` / input) |
-| `postToolUse` | After a tool returns | Tool output (`mcp` / output) |
+| Hooks (`beforeSubmitPrompt`, `preToolUse`, `postToolUse`) | Every agent turn / tool | TrustGuard `POST /v1/evaluate` |
+| MCP server **TrustGate** | When the agent uses MCP tools | TrustGate MCP plane `…/{consumer}/mcp` |
 
-`preToolUse` is generic: Shell, Read, Write, MCP, Task/subagents — one hook
-covers them all. `postToolUse` covers the same surface on the way back
-(indirect prompt injection and DLP on file contents, command output, MCP
-responses).
+An admin creates **one Cursor collector** (firewall) and **one MCP consumer**
+(tools). IT deploys firewall credentials by MDM and MCP connection values as
+plugin variables (or OAuth). Developers do not need a NeuralTrust account for
+the firewall path.
 
 ## Enterprise rollout
 
-1. In NeuralTrust, create a **Cursor** collector on the org’s guard and mint a
-   collector API key (`tgk_…`).
-2. Deploy this plugin to employees (marketplace, MDM, or image).
-3. Push the managed config with MDM (or your fleet tool):
+### 1. TrustGuard firewall (hooks)
+
+1. In NeuralTrust, create a **Cursor** collector and mint a collector API key (`tgk_…`).
+2. Deploy this plugin (Team Marketplace, marketplace, or image).
+3. Push managed config with MDM:
 
 ```json
 {
@@ -40,27 +37,37 @@ responses).
 | Linux | `/etc/trustguard/cursor.json` |
 | Windows | `%ProgramData%\TrustGuard\cursor.json` |
 
-That’s it. Developers never configure anything. Attribution uses the Cursor
-account email from each hook payload (`consumer_id = cursor:<email>`), so you
-can audit and route policy per person without per-user credentials.
+Attribution uses the Cursor account email (`consumer_id = cursor:<email>`).
 
-### Managed mode
+### 2. TrustGate MCP Gateway (tools)
 
-When the managed file ships an `api_key`, the install is **managed**:
+1. In NeuralTrust, create/select an **MCP consumer** and open **Connect**.
+2. Copy the MCP URL (`https://{host}/{consumer-slug}/mcp`).
+3. Set plugin variables (team admin once, or each developer under
+   **Customize → Plugins → NeuralTrust → Configure**):
 
-- Locked: `api_key`, `data_url`, `fail_mode` — user file and env cannot replace
-  them. A developer cannot disable or redirect the org firewall.
-- Soft prefs still layer: `timeout_ms`, `transform_action`, `events`,
-  `consumer_id`.
+| Variable | Required | Notes |
+|---|---|---|
+| `TRUSTGATE_MCP_URL` | Yes | Full URL from Connect |
+| `TRUSTGATE_MCP_API_KEY` | If API-key auth | Header `X-AG-API-Key`. Leave empty for **OAuth** |
+| `TRUSTGATE_GATEWAY_SLUG` | Hybrid only | Header `X-AG-Gateway-Slug` |
 
-## What each event does
+OAuth consumers only need the URL — Cursor opens the login flow on first use.
 
-| Event | Protocol | Direction | Payload | Typical detectors |
-|---|---|---|---|---|
-| `beforeSubmitPrompt` | `llm` | `input` | user message | prompt_guard, DLP, prompt_moderation, multiturn_guard |
-| `preToolUse` (Shell) | `all` | `input` | `{"input": "<command>"}` | code_sanitation, DLP |
-| `preToolUse` (other) | `mcp` | `input` | JSON-RPC `tools/call` | indirect_prompt_injection, prompt_guard |
-| `postToolUse` | `mcp` | `output` | JSON-RPC tool result | indirect_prompt_injection, DLP |
+**Do not** put the TrustGuard `tgk_…` key in MCP variables. Different product,
+different credential.
+
+## What the firewall evaluates
+
+| Cursor event | When it runs | What TrustGuard sees |
+|---|---|---|
+| `beforeSubmitPrompt` | User hits send | The prompt (`llm` / input) |
+| `preToolUse` | Before any tool runs | Shell command (`all`) or tool call (`mcp` / input) |
+| `postToolUse` | After a tool returns | Tool output (`mcp` / output) |
+
+`preToolUse` is generic: Shell, Read, Write, MCP, Task/subagents. When the agent
+calls tools via the bundled TrustGate MCP server, those calls are still gated by
+the same hooks.
 
 ### Verdicts
 
@@ -79,9 +86,18 @@ Notes:
 - `postToolUse` cannot revoke a tool that already ran. Findings become
   `additional_context` for the agent, not a fake deny.
 
+### Managed mode (firewall)
+
+When the managed file ships an `api_key`, the install is **managed**:
+
+- Locked: `api_key`, `data_url`, `fail_mode` — user file and env cannot replace
+  them. A developer cannot disable or redirect the org firewall.
+- Soft prefs still layer: `timeout_ms`, `transform_action`, `events`,
+  `consumer_id`.
+
 ## Local / BYO setup
 
-Only needed when MDM is not in play (dev machines, pilots).
+### Firewall
 
 1. Install the plugin (marketplace, local repo, or `make install-local`).
 2. Write `~/.trustguard/cursor.json` (`chmod 600`):
@@ -107,9 +123,17 @@ The first hook event downloads the pinned `trustguard-cursor` binary into
 events fail open so the editor never bricks. A binary already on `PATH` always
 wins (manual / MDM installs).
 
-The plugin skill `setup-trustguard` walks through the same flow inside Cursor.
+### MCP Gateway
+
+1. Set **TrustGate MCP URL** (and API key if not OAuth) in plugin Configure.
+2. Reload the window; confirm **TrustGate** under MCP servers in Customize.
+3. Ask the agent to use a tool from a toolkit bound to that consumer.
+
+The plugin skill `setup-trustguard` walks through firewall + MCP setup inside Cursor.
 
 ## Configuration reference
+
+### Firewall (hooks)
 
 Layer order: managed file → user file → environment.
 
@@ -129,18 +153,29 @@ Path overrides: `TRUSTGUARD_CURSOR_SYSTEM_CONFIG`, `TRUSTGUARD_CURSOR_CONFIG`.
 
 No API key → stderr warning and **allow everything** (fail open).
 
+### MCP Gateway (plugin variables)
+
+Set in Cursor **Plugins → Configure** (not in `cursor.json`):
+
+| Variable | Header / field | Notes |
+|---|---|---|
+| `TRUSTGATE_MCP_URL` | MCP `url` | Required |
+| `TRUSTGATE_MCP_API_KEY` | `X-AG-API-Key` | Optional; empty for OAuth |
+| `TRUSTGATE_GATEWAY_SLUG` | `X-AG-Gateway-Slug` | Optional; hybrid |
+
 ## Plugin layout
 
 ```
 trustguard/
-├── .cursor-plugin/plugin.json   # manifest + logo
+├── .cursor-plugin/plugin.json   # manifest, variables, mcpServers
+├── mcp.json                     # TrustGate remote MCP entry (${…} placeholders)
 ├── assets/logo.svg
 ├── hooks/
 │   ├── hooks.json               # beforeSubmitPrompt, preToolUse, postToolUse
 │   ├── trustguard-hook.sh       # macOS / Linux (+ Git Bash)
-│   ├── trustguard-hook.cmd      # Windows entry (POSIX fail-open half of the polyglot)
+│   ├── trustguard-hook.cmd      # Windows entry
 │   └── trustguard-hook.ps1      # Windows bootstrap
-└── skills/setup-trustguard/     # guided setup inside Cursor
+└── skills/setup-trustguard/     # guided setup (firewall + MCP)
 ```
 
 The hook command is a polyglot —
