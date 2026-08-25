@@ -74,17 +74,21 @@ the same hooks.
 | TrustGuard status | Prompt (`beforeSubmitPrompt`) | Tool call (`preToolUse`) | Tool result (`postToolUse`) |
 |---|---|---|---|
 | `block` | Dropped — `TrustGuard blocked this action` | Denied | Context injected: treat result as untrusted |
-| `transform` | Submitted with warning (or dropped if `transform_action=deny`) | Allowed with warning (or denied if `transform_action=deny`) | Context injected when configured to deny/ask |
+| `ask` | Submitted with warning (no confirmation UI) | `permission: "ask"` | Allowed — must not revoke an already-approved tool |
+| `transform` | Submitted with warning (or dropped if `transform_action=deny`) | `permission: "ask"` by default (or denied if `transform_action=deny`) | Context injected when configured to deny/ask |
 | `report` | Allowed, optional notice | Allowed, optional notice | No-op unless notice applies |
 | `allow` / `skip` | Allowed | Allowed | No-op |
 
 Notes:
 
-- Cursor has no `ask` for prompts, and does not enforce `ask` on `preToolUse`.
-  Default `transform_action` is `ask` → the action proceeds with a warning.
+- Cursor has no confirmation UI for prompts. A gate `ask` on
+  `beforeSubmitPrompt` still submits, with a warning.
+- `preToolUse` now emits `permission: "ask"` for gate `ask` and for
+  `transform` when `transform_action` is `ask` (the default).
   Set `transform_action: "deny"` to hard-stop PII/secrets.
-- `postToolUse` cannot revoke a tool that already ran. Findings become
-  `additional_context` for the agent, not a fake deny.
+- `postToolUse` cannot revoke a tool that already ran. Detector findings
+  become `additional_context`. A gate `ask` on output is ignored so an
+  approved PreToolUse is not re-challenged.
 
 ### Managed mode (firewall)
 
