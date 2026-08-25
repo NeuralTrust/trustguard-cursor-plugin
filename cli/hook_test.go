@@ -170,15 +170,44 @@ func TestPreToolUseAcceptsArgumentsKey(t *testing.T) {
 	}
 }
 
-func TestPreToolUseNeverAnswersAsk(t *testing.T) {
+func TestPreToolUseTransformAskAnswersAsk(t *testing.T) {
 	srv, _ := stubGuard(t, EvaluateResponse{Status: "transform"})
 	out := invokeHook(t, testConfig(srv.URL), map[string]any{
 		"hook_event_name": "preToolUse",
 		"tool_name":       "Shell",
 		"tool_input":      map[string]any{"command": "echo john.doe@example.com"},
 	})
-	if out.Permission != permissionAllow {
-		t.Fatalf("preToolUse does not enforce ask, so it must resolve to allow, got %+v", out)
+	if out.Permission != permissionAsk {
+		t.Fatalf("preToolUse must emit permission=ask for transform_action=ask, got %+v", out)
+	}
+}
+
+func TestPreToolUseGateAskAnswersAsk(t *testing.T) {
+	srv, captured := stubGuard(t, EvaluateResponse{
+		Status: "ask",
+		Findings: []Finding{{
+			Source:  FindingSource{Kind: "gate", GateName: "confirm-shell"},
+			Signal:  &FindingSignal{Type: "gate_ask"},
+			Outcome: &FindingOutcome{Action: "ask"},
+		}},
+	})
+	out := invokeHook(t, testConfig(srv.URL), map[string]any{
+		"hook_event_name": "preToolUse",
+		"tool_name":       "Shell",
+		"tool_input":      map[string]any{"command": "rm -rf /tmp/demo"},
+	})
+	if out.Permission != permissionAsk {
+		t.Fatalf("gate ask must emit permission=ask, got %+v", out)
+	}
+	if !strings.Contains(out.UserMessage, "confirm-shell") {
+		t.Fatalf("expected gate name in ask message, got %q", out.UserMessage)
+	}
+	attrs := (*captured)["attributes"].(map[string]any)
+	if attrs["source"].(map[string]any)["application"] != "cursor-plugin" {
+		t.Fatalf("expected source.application=cursor-plugin, got %v", attrs)
+	}
+	if attrs["tool"].(map[string]any)["name"] != "Shell" {
+		t.Fatalf("expected attributes.tool.name=Shell, got %v", attrs)
 	}
 }
 
@@ -215,6 +244,36 @@ func TestPostToolUseCleanResultAddsNoContext(t *testing.T) {
 	})
 	if out.AdditionalContext != "" {
 		t.Fatalf("expected no context on a clean result, got %q", out.AdditionalContext)
+	}
+}
+
+func TestPostToolUseGateAskDoesNotWarn(t *testing.T) {
+	srv, _ := stubGuard(t, EvaluateResponse{
+		Status: "ask",
+		Findings: []Finding{{
+			Source:  FindingSource{Kind: "gate", GateName: "confirm-shell"},
+			Outcome: &FindingOutcome{Action: "ask"},
+		}},
+	})
+	out := invokeHook(t, testConfig(srv.URL), map[string]any{
+		"hook_event_name": "postToolUse",
+		"tool_name":       "Shell",
+		"tool_output":     "ok",
+	})
+	if out.AdditionalContext != "" {
+		t.Fatalf("gate ask on postToolUse must not mark the result untrusted, got %+v", out)
+	}
+}
+
+func TestPostToolUseTransformAskWarnsUntrusted(t *testing.T) {
+	srv, _ := stubGuard(t, EvaluateResponse{Status: "transform"})
+	out := invokeHook(t, testConfig(srv.URL), map[string]any{
+		"hook_event_name": "postToolUse",
+		"tool_name":       "Read",
+		"tool_output":     "secret=sk-test",
+	})
+	if !strings.Contains(out.AdditionalContext, "untrusted") {
+		t.Fatalf("transform on postToolUse must still warn, got %q", out.AdditionalContext)
 	}
 }
 
