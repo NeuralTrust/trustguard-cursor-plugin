@@ -236,10 +236,7 @@ func applyVerdict(cfg Config, res *EvaluateResponse) verdict {
 		}
 		return verdict{permission: permission, userMessage: msg, agentMessage: msg, fromTransform: true}
 	case "ask":
-		msg := "TrustGuard requires confirmation before this action"
-		if reason != "" {
-			msg = "TrustGuard requires confirmation: " + reason
-		}
+		msg := askMessage(reason)
 		return verdict{permission: permissionAsk, userMessage: msg, agentMessage: msg}
 	case "report":
 		v := verdict{permission: permissionAllow}
@@ -274,14 +271,14 @@ func primaryReason(findings []Finding) string {
 	if best == nil {
 		return ""
 	}
+	if name := strings.TrimSpace(best.Source.GateName); name != "" {
+		return name
+	}
 	label := ""
 	if best.Signal != nil {
-		label = best.Signal.Type
+		label = humanizeSignalType(best.Signal.Type)
 	}
 	source := best.Source.DetectorName
-	if source == "" {
-		source = best.Source.GateName
-	}
 	if source == "" {
 		source = best.Source.Plugin
 	}
@@ -293,6 +290,22 @@ func primaryReason(findings []Finding) string {
 	default:
 		return source
 	}
+}
+
+func askMessage(reason string) string {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return "A TrustGuard policy needs your approval to continue."
+	}
+	return fmt.Sprintf("TrustGuard policy %q needs your approval.", reason)
+}
+
+func humanizeSignalType(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.HasPrefix(raw, "gate_") {
+		return ""
+	}
+	return strings.ReplaceAll(raw, "_", " ")
 }
 
 func failModeOutput(cfg Config, in hookInput, err error) hookOutput {
