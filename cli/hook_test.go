@@ -250,9 +250,11 @@ func TestPreToolUseGateAskAnswersAsk(t *testing.T) {
 	if out.Permission != permissionAsk {
 		t.Fatalf("gate ask must emit permission=ask, got %+v", out)
 	}
-	want := `TrustGuard policy "confirm-shell" needs your approval.`
-	if out.UserMessage != want {
-		t.Fatalf("ask message = %q, want %q", out.UserMessage, want)
+	if out.UserMessage != askApprovalMessage {
+		t.Fatalf("ask message = %q, want %q", out.UserMessage, askApprovalMessage)
+	}
+	if out.AgentMessage != askApprovalMessage {
+		t.Fatalf("ask agent message = %q, want %q", out.AgentMessage, askApprovalMessage)
 	}
 	if strings.Contains(out.UserMessage, "gate_ask") {
 		t.Fatalf("internal signal type must not appear in the prompt, got %q", out.UserMessage)

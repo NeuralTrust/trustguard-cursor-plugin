@@ -49,6 +49,8 @@ const (
 	permissionAllow = "allow"
 	permissionAsk   = "ask"
 	permissionDeny  = "deny"
+
+	askApprovalMessage = "A TrustGuard policy needs your approval to continue."
 )
 
 // verdict is the event-agnostic decision derived from an evaluate response.
@@ -236,8 +238,7 @@ func applyVerdict(cfg Config, res *EvaluateResponse) verdict {
 		}
 		return verdict{permission: permission, userMessage: msg, agentMessage: msg, fromTransform: true}
 	case "ask":
-		msg := askMessage(reason)
-		return verdict{permission: permissionAsk, userMessage: msg, agentMessage: msg}
+		return verdict{permission: permissionAsk, userMessage: askApprovalMessage, agentMessage: askApprovalMessage}
 	case "report":
 		v := verdict{permission: permissionAllow}
 		if cfg.reportNotice() && reason != "" {
@@ -290,14 +291,6 @@ func primaryReason(findings []Finding) string {
 	default:
 		return source
 	}
-}
-
-func askMessage(reason string) string {
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
-		return "A TrustGuard policy needs your approval to continue."
-	}
-	return fmt.Sprintf("TrustGuard policy %q needs your approval.", reason)
 }
 
 func humanizeSignalType(raw string) string {
