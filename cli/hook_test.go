@@ -128,6 +128,10 @@ func TestPreToolUseShellUsesMinimalPayload(t *testing.T) {
 	if payload["input"] != "rm -rf /" {
 		t.Fatalf("expected minimal input payload, got %v", payload)
 	}
+	attrs := (*captured)["attributes"].(map[string]any)
+	if attrs["tool"].(map[string]any)["name"] != "Shell" {
+		t.Fatalf("expected attributes.tool.name=Shell, got %v", attrs)
+	}
 }
 
 func TestPreToolUseSendsToolsCallEnvelope(t *testing.T) {
@@ -154,6 +158,53 @@ func TestPreToolUseSendsToolsCallEnvelope(t *testing.T) {
 	}
 	if params["arguments"].(map[string]any)["q"] != "password reset" {
 		t.Fatalf("expected arguments forwarded, got %v", params["arguments"])
+	}
+	attrs := (*captured)["attributes"].(map[string]any)
+	if _, ok := attrs["tool"]; ok {
+		t.Fatalf("MCP tools/call must not stamp attributes.tool, got %v", attrs)
+	}
+}
+
+func TestPreToolUseStripsMCPHookPrefix(t *testing.T) {
+	srv, captured := stubGuard(t, EvaluateResponse{Status: "allow"})
+	out := invokeHook(t, testConfig(srv.URL), map[string]any{
+		"hook_event_name": "preToolUse",
+		"tool_name":       "mcp__4916e5d1-9114-4c57-bf38-0355f163a289__search_threads",
+		"tool_input":      map[string]any{"q": "auth"},
+	})
+
+	if out.Permission != permissionAllow {
+		t.Fatalf("expected allow, got %+v", out)
+	}
+	if (*captured)["protocol"] != "mcp" {
+		t.Fatalf("expected protocol mcp, got %v", (*captured)["protocol"])
+	}
+	params := (*captured)["payload"].(map[string]any)["params"].(map[string]any)
+	if params["name"] != "search_threads" {
+		t.Fatalf("expected params.name=search_threads, got %v", params)
+	}
+	attrs := (*captured)["attributes"].(map[string]any)
+	if _, ok := attrs["tool"]; ok {
+		t.Fatalf("MCP tools/call must not stamp attributes.tool, got %v", attrs)
+	}
+}
+
+func TestMCPCallName(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"search_docs", "search_docs"},
+		{"mcp__fs__read", "read"},
+		{"mcp__4916e5d1-9114-4c57-bf38-0355f163a289__search_threads", "search_threads"},
+		{"mcp__server", "mcp__server"},
+		{"mcp__server__", "mcp__server__"},
+		{"Shell", "Shell"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := mcpCallName(tc.in); got != tc.want {
+			t.Errorf("mcpCallName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -225,6 +276,10 @@ func TestPostToolUseScoredAsMCPResultOutput(t *testing.T) {
 	result := (*captured)["payload"].(map[string]any)["result"].(map[string]any)
 	if result["content"] == nil {
 		t.Fatalf("expected result content, got %v", result)
+	}
+	attrs := (*captured)["attributes"].(map[string]any)
+	if attrs["tool"].(map[string]any)["name"] != "Read" {
+		t.Fatalf("expected attributes.tool.name=Read, got %v", attrs)
 	}
 	// The tool already ran: the finding can only reach the agent as context.
 	if out.Permission != "" || out.Continue != nil {
