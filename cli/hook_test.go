@@ -128,6 +128,10 @@ func TestPreToolUseShellUsesMinimalPayload(t *testing.T) {
 	if payload["input"] != "rm -rf /" {
 		t.Fatalf("expected minimal input payload, got %v", payload)
 	}
+	attrs := (*captured)["attributes"].(map[string]any)
+	if attrs["tool"].(map[string]any)["name"] != "Shell" {
+		t.Fatalf("expected attributes.tool.name=Shell, got %v", attrs)
+	}
 }
 
 func TestPreToolUseSendsToolsCallEnvelope(t *testing.T) {
