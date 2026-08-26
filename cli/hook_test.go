@@ -155,6 +155,10 @@ func TestPreToolUseSendsToolsCallEnvelope(t *testing.T) {
 	if params["arguments"].(map[string]any)["q"] != "password reset" {
 		t.Fatalf("expected arguments forwarded, got %v", params["arguments"])
 	}
+	attrs := (*captured)["attributes"].(map[string]any)
+	if _, ok := attrs["tool"]; ok {
+		t.Fatalf("MCP tools/call must not stamp attributes.tool, got %v", attrs)
+	}
 }
 
 func TestPreToolUseAcceptsArgumentsKey(t *testing.T) {

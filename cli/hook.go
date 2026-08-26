@@ -154,7 +154,6 @@ func buildEvaluateRequest(cfg Config, in hookInput) (EvaluateRequest, bool) {
 				"arguments": decodeToolArguments(in),
 			},
 		}
-		stampToolName(base.Attributes, in.ToolName)
 		return base, true
 
 	case "postToolUse":
