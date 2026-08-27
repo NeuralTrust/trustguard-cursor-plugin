@@ -113,18 +113,27 @@ func TestApplyDefaultsNormalizesInvalidValues(t *testing.T) {
 	if cfg.FailMode != "open" || cfg.TransformAction != "ask" || cfg.TimeoutMS != defaultTimeoutMS {
 		t.Fatalf("invalid values must normalize to defaults: %+v", cfg)
 	}
-	if cfg.DataURL != defaultDataURL || cfg.ConsumerID == "" {
+	if cfg.DataURL != defaultDataURL {
 		t.Fatalf("missing defaults: %+v", cfg)
+	}
+	if cfg.ConsumerID != "" {
+		t.Fatalf("applyDefaults must not invent consumer_id, got %q", cfg.ConsumerID)
 	}
 }
 
 func TestConsumerIDForPrefersUserEmail(t *testing.T) {
-	cfg := Config{ConsumerID: "cursor:fallback"}
-	got := consumerIDFor(cfg, hookInput{UserEmail: "alice@acme.com"})
-	if got != "cursor:alice@acme.com" {
+	got := consumerIDFor(Config{}, hookInput{UserEmail: "alice@acme.com"})
+	if got != "alice@acme.com" {
 		t.Fatalf("expected cursor email consumer, got %q", got)
 	}
-	got = consumerIDFor(cfg, hookInput{UserEmail: "  "})
+}
+
+func TestConsumerIDForConfiguredBeatsUserEmail(t *testing.T) {
+	got := consumerIDFor(Config{ConsumerID: "cursor:mdm"}, hookInput{UserEmail: "alice@acme.com"})
+	if got != "cursor:mdm" {
+		t.Fatalf("got %q", got)
+	}
+	got = consumerIDFor(Config{ConsumerID: "cursor:fallback"}, hookInput{UserEmail: "  "})
 	if got != "cursor:fallback" {
 		t.Fatalf("blank email must fall back to config, got %q", got)
 	}

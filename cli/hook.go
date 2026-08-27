@@ -17,8 +17,8 @@ type hookInput struct {
 	ConversationID string   `json:"conversation_id"`
 	GenerationID   string   `json:"generation_id"`
 	WorkspaceRoots []string `json:"workspace_roots"`
-	// UserEmail is the Cursor-authenticated account; preferred for consumer_id
-	// so enterprise attribution works without a NeuralTrust login.
+	// UserEmail is the Cursor-authenticated account. Used for consumer_id when
+	// consumer_id is not set in config (MDM / TRUSTGUARD_CONSUMER_ID).
 	UserEmail string `json:"user_email"`
 
 	// beforeSubmitPrompt

@@ -33,9 +33,8 @@ type Config struct {
 	TimeoutMS int `json:"timeout_ms"`
 	// MaxContentBytes truncates file/tool content sent to the guard.
 	MaxContentBytes int `json:"max_content_bytes"`
-	// ConsumerID anchors anomaly detection and policy routing. Prefer the
-	// Cursor user_email from the hook payload at runtime; this field is the
-	// fallback (MDM template, env, or OS user).
+	// ConsumerID is an explicit override (MDM / TRUSTGUARD_CONSUMER_ID).
+	// If empty, runtime uses the Cursor account email from the hook payload.
 	ConsumerID string `json:"consumer_id"`
 	// Events disables individual hook events, e.g. {"postToolUse": false}.
 	Events map[string]bool `json:"events"`
@@ -186,9 +185,6 @@ func (c *Config) applyDefaults() {
 	if c.MaxContentBytes <= 0 {
 		c.MaxContentBytes = defaultMaxContentBytes
 	}
-	if c.ConsumerID == "" {
-		c.ConsumerID = currentUser()
-	}
 }
 
 func (c *Config) timeout() time.Duration {
@@ -207,23 +203,30 @@ func (c *Config) reportNotice() bool {
 	return c.ReportNotice == nil || *c.ReportNotice
 }
 
-// consumerIDFor prefers the Cursor-authenticated email from the hook payload
-// (enterprise attribution without a NeuralTrust login), then the configured
-// fallback, then the OS user.
+// consumerIDFor prefers an explicit configured consumer_id, then the
+// Cursor-authenticated email from the hook payload, then the OS user.
 func consumerIDFor(cfg Config, in hookInput) string {
-	if email := strings.TrimSpace(in.UserEmail); email != "" {
-		return "cursor:" + email
-	}
 	if cfg.ConsumerID != "" {
 		return cfg.ConsumerID
+	}
+	if email := looksLikeEmail(in.UserEmail); email != "" {
+		return email
 	}
 	return currentUser()
 }
 
+func looksLikeEmail(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || !strings.Contains(s, "@") || strings.ContainsAny(s, " \t\n") {
+		return ""
+	}
+	return s
+}
+
 func currentUser() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
-		return "cursor:" + u.Username
+		return u.Username
 	}
 	host, _ := os.Hostname()
-	return "cursor:" + host
+	return host
 }

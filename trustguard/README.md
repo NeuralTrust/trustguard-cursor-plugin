@@ -37,7 +37,9 @@ the firewall path.
 | Linux | `/etc/trustguard/cursor.json` |
 | Windows | `%ProgramData%\TrustGuard\cursor.json` |
 
-Attribution uses the Cursor account email (`consumer_id = cursor:<email>`).
+Attribution uses the Cursor account email as `consumer_id`. The collector
+already identifies the source. Override with `TRUSTGUARD_CONSUMER_ID` or
+`consumer_id` in config.
 
 ### 2. TrustGate MCP Gateway (tools)
 
@@ -148,7 +150,7 @@ Layer order: managed file → user file → environment.
 | `TRUSTGUARD_FAIL_MODE` | `fail_mode` | `open` | `closed` recommended in enterprise. Locked when managed |
 | `TRUSTGUARD_TRANSFORM_ACTION` | `transform_action` | `ask` | `ask` / `deny` / `allow` for `transform` verdicts |
 | `TRUSTGUARD_TIMEOUT_MS` | `timeout_ms` | `5000` | Per `/v1/evaluate` call |
-| `TRUSTGUARD_CONSUMER_ID` | `consumer_id` | `cursor:<os user>` | Fallback only — runtime prefers Cursor `user_email` |
+| `TRUSTGUARD_CONSUMER_ID` | `consumer_id` | OS user | Override. Else runtime uses Cursor `user_email`. |
 | — | `max_content_bytes` | `262144` | Clip size for tool output sent to the guard |
 | — | `report_notice` | `true` | Surface report-only findings to the user |
 | — | `events` | all on | e.g. `{"postToolUse": false}` |
