@@ -90,6 +90,9 @@ func TestPromptBlockAnswersContinueFalse(t *testing.T) {
 	if (*captured)["consumer_id"] != "cursor:test" {
 		t.Fatalf("expected configured consumer_id, got %v", (*captured)["consumer_id"])
 	}
+	if got := userEmailAttr(t, captured); got != "alice@acme.com" {
+		t.Fatalf("expected attributes.user.email=alice@acme.com, got %q", got)
+	}
 	payload := (*captured)["payload"].(map[string]any)
 	if _, hasMessages := payload["messages"]; !hasMessages {
 		t.Fatalf("expected messages payload, got %v", payload)
@@ -546,4 +549,12 @@ func TestEmptyPromptSkipsEvaluation(t *testing.T) {
 	if len(*captured) != 0 {
 		t.Fatalf("empty prompt must not hit the guard, got %v", *captured)
 	}
+}
+
+func userEmailAttr(t *testing.T, captured *map[string]any) string {
+	t.Helper()
+	attrs, _ := (*captured)["attributes"].(map[string]any)
+	user, _ := attrs["user"].(map[string]any)
+	email, _ := user["email"].(string)
+	return email
 }
