@@ -14,12 +14,12 @@
 
 param([switch]$InstallOnly)
 
-$Version = '0.1.3'
+$Version = '0.1.4'
 
 # Per-arch SHA-256 of the Windows release binaries (filled per release).
 $Sha256 = @{
-    'amd64' = '475abfb5f1a666f719f868d9d084e56d8d701cfd8ed3ed4eaf67ce32ee227927'
-    'arm64' = 'fcf2fba7bb46c853fced7b44d07c7f6c2422b2b14d910a1b3b21b8b74baf130f'
+    'amd64' = 'a843a49300fde06f56918e5cb91562093a643684da1f781dc95b852afb3eb4d0'
+    'arm64' = '5c0d98bc44d3a91a7f6e4c72f61c347640c5ffaeba39c7417a6f735f3be32df9'
 }
 
 # Read a single line: the hook payload is one JSON document and Cursor may
