@@ -210,7 +210,7 @@ func consumerIDFor(cfg Config, in hookInput) string {
 		return cfg.ConsumerID
 	}
 	if email := looksLikeEmail(in.UserEmail); email != "" {
-		return "cursor:" + email
+		return email
 	}
 	return currentUser()
 }
@@ -225,8 +225,8 @@ func looksLikeEmail(s string) string {
 
 func currentUser() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
-		return "cursor:" + u.Username
+		return u.Username
 	}
 	host, _ := os.Hostname()
-	return "cursor:" + host
+	return host
 }

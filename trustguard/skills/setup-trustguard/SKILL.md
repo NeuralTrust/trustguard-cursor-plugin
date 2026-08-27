@@ -94,7 +94,7 @@ verdicts follow the TrustGuard policy: `block` → denied, PII/secrets
 (`transform`) → allowed with a warning unless `transform_action` is `deny`,
 `report` → allowed with a notice. A finding on `postToolUse` cannot undo a tool
 that already ran; it is injected as context flagging the result as untrusted.
-Attribution uses `consumer_id = cursor:<user_email>` when Cursor provides it,
+Attribution uses the Cursor `user_email` as `consumer_id` when Cursor provides it,
 unless `consumer_id` / `TRUSTGUARD_CONSUMER_ID` is set.
 
 ---

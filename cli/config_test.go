@@ -123,7 +123,7 @@ func TestApplyDefaultsNormalizesInvalidValues(t *testing.T) {
 
 func TestConsumerIDForPrefersUserEmail(t *testing.T) {
 	got := consumerIDFor(Config{}, hookInput{UserEmail: "alice@acme.com"})
-	if got != "cursor:alice@acme.com" {
+	if got != "alice@acme.com" {
 		t.Fatalf("expected cursor email consumer, got %q", got)
 	}
 }
