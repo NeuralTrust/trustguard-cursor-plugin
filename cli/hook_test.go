@@ -87,8 +87,8 @@ func TestPromptBlockAnswersContinueFalse(t *testing.T) {
 	if (*captured)["session_id"] != "conv-1" {
 		t.Fatalf("expected session_id from conversation_id, got %v", (*captured)["session_id"])
 	}
-	if (*captured)["consumer_id"] != "cursor:alice@acme.com" {
-		t.Fatalf("expected consumer_id from user_email, got %v", (*captured)["consumer_id"])
+	if (*captured)["consumer_id"] != "cursor:test" {
+		t.Fatalf("expected configured consumer_id, got %v", (*captured)["consumer_id"])
 	}
 	payload := (*captured)["payload"].(map[string]any)
 	if _, hasMessages := payload["messages"]; !hasMessages {
