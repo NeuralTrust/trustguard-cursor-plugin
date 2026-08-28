@@ -111,7 +111,7 @@ func buildEvaluateRequest(cfg Config, in hookInput) (EvaluateRequest, bool) {
 	base := EvaluateRequest{
 		Direction:  "input",
 		SessionID:  in.ConversationID,
-		ConsumerID: consumerIDFor(cfg, in),
+		ConsumerID: cfg.ConsumerID,
 		Attributes: map[string]any{
 			"collector": map[string]any{"type": "ide"},
 			"source":    map[string]any{"application": "cursor-plugin"},
