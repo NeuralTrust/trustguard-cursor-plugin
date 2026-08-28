@@ -93,6 +93,10 @@ func TestPromptBlockAnswersContinueFalse(t *testing.T) {
 	if got := userEmailAttr(t, captured); got != "alice@acme.com" {
 		t.Fatalf("expected attributes.user.email=alice@acme.com, got %q", got)
 	}
+	cursor := hookAttr(t, captured, "cursor")
+	if cursor["hook_event_name"] != "beforeSubmitPrompt" || cursor["prompt"] == nil {
+		t.Fatalf("expected full hook JSON in attributes.cursor, got %v", cursor)
+	}
 	payload := (*captured)["payload"].(map[string]any)
 	if _, hasMessages := payload["messages"]; !hasMessages {
 		t.Fatalf("expected messages payload, got %v", payload)
@@ -569,10 +573,46 @@ func TestConsumerIDOmittedWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestEvaluateStampsFullHookJSON(t *testing.T) {
+	srv, captured := stubGuard(t, EvaluateResponse{Status: "allow"})
+	_ = invokeHook(t, testConfig(srv.URL), map[string]any{
+		"hook_event_name": "beforeSubmitPrompt",
+		"prompt":          "hello",
+		"conversation_id": "conv-1",
+		"generation_id":   "gen-9",
+		"model":           "gpt-5",
+		"model_id":        "gpt-5-thinking",
+		"cursor_version":  "1.7.2",
+		"workspace_roots": []string{"/tmp/ws"},
+		"user_email":      "alice@acme.com",
+		"transcript_path": "/tmp/transcript.jsonl",
+		"attachments":     []any{map[string]any{"type": "file", "file_path": "/tmp/ws/a.go"}},
+		"future_extra":    "kept",
+	})
+	cursor := hookAttr(t, captured, "cursor")
+	if cursor["model"] != "gpt-5" || cursor["generation_id"] != "gen-9" || cursor["future_extra"] != "kept" {
+		t.Fatalf("attributes.cursor must keep every stdin field, got %v", cursor)
+	}
+	atts, _ := cursor["attachments"].([]any)
+	if len(atts) != 1 {
+		t.Fatalf("expected attachments in attributes.cursor, got %v", cursor["attachments"])
+	}
+}
+
 func userEmailAttr(t *testing.T, captured *map[string]any) string {
 	t.Helper()
 	attrs, _ := (*captured)["attributes"].(map[string]any)
 	user, _ := attrs["user"].(map[string]any)
 	email, _ := user["email"].(string)
 	return email
+}
+
+func hookAttr(t *testing.T, captured *map[string]any, key string) map[string]any {
+	t.Helper()
+	attrs, _ := (*captured)["attributes"].(map[string]any)
+	nested, _ := attrs[key].(map[string]any)
+	if nested == nil {
+		t.Fatalf("missing attributes.%s in %v", key, attrs)
+	}
+	return nested
 }
