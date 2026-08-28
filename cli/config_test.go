@@ -121,20 +121,13 @@ func TestApplyDefaultsNormalizesInvalidValues(t *testing.T) {
 	}
 }
 
-func TestConsumerIDForPrefersUserEmail(t *testing.T) {
-	got := consumerIDFor(Config{}, hookInput{UserEmail: "alice@acme.com"})
-	if got != "alice@acme.com" {
-		t.Fatalf("expected cursor email consumer, got %q", got)
-	}
-}
-
-func TestConsumerIDForConfiguredBeatsUserEmail(t *testing.T) {
-	got := consumerIDFor(Config{ConsumerID: "cursor:mdm"}, hookInput{UserEmail: "alice@acme.com"})
-	if got != "cursor:mdm" {
+func TestLooksLikeEmailRejectsNonEmails(t *testing.T) {
+	if got := looksLikeEmail("alice@acme.com"); got != "alice@acme.com" {
 		t.Fatalf("got %q", got)
 	}
-	got = consumerIDFor(Config{ConsumerID: "cursor:fallback"}, hookInput{UserEmail: "  "})
-	if got != "cursor:fallback" {
-		t.Fatalf("blank email must fall back to config, got %q", got)
+	for _, in := range []string{"", "   ", "alice", "alice acme@com"} {
+		if got := looksLikeEmail(in); got != "" {
+			t.Fatalf("expected %q rejected, got %q", in, got)
+		}
 	}
 }

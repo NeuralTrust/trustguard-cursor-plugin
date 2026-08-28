@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -33,8 +32,9 @@ type Config struct {
 	TimeoutMS int `json:"timeout_ms"`
 	// MaxContentBytes truncates file/tool content sent to the guard.
 	MaxContentBytes int `json:"max_content_bytes"`
-	// ConsumerID is an explicit override (MDM / TRUSTGUARD_CONSUMER_ID).
-	// If empty, runtime uses the Cursor account email from the hook payload.
+	// ConsumerID is set only by MDM / TRUSTGUARD_CONSUMER_ID. When empty the
+	// evaluate request omits consumer_id; the account email still travels in
+	// attributes.user.email.
 	ConsumerID string `json:"consumer_id"`
 	// Events disables individual hook events, e.g. {"postToolUse": false}.
 	Events map[string]bool `json:"events"`
@@ -203,30 +203,10 @@ func (c *Config) reportNotice() bool {
 	return c.ReportNotice == nil || *c.ReportNotice
 }
 
-// consumerIDFor prefers an explicit configured consumer_id, then the
-// Cursor-authenticated email from the hook payload, then the OS user.
-func consumerIDFor(cfg Config, in hookInput) string {
-	if cfg.ConsumerID != "" {
-		return cfg.ConsumerID
-	}
-	if email := looksLikeEmail(in.UserEmail); email != "" {
-		return email
-	}
-	return currentUser()
-}
-
 func looksLikeEmail(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" || !strings.Contains(s, "@") || strings.ContainsAny(s, " \t\n") {
 		return ""
 	}
 	return s
-}
-
-func currentUser() string {
-	if u, err := user.Current(); err == nil && u.Username != "" {
-		return u.Username
-	}
-	host, _ := os.Hostname()
-	return host
 }

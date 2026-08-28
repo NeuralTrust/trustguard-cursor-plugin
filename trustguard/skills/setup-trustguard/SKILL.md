@@ -69,8 +69,8 @@ into the chat — have them create the file themselves, or write a placeholder:
 Path: `~/.trustguard/cursor.json`, `chmod 600`.
 
 Optional soft keys: `transform_action` (`ask` / `deny` / `allow`),
-`timeout_ms` (5000), `consumer_id` (override — otherwise the Cursor
-account email from the hook payload).
+`timeout_ms` (5000), `consumer_id` (only source of `consumer_id` — omitted
+when unset; the Cursor account email travels in `attributes.user.email`).
 
 ### 4. Verify firewall
 
@@ -94,8 +94,9 @@ verdicts follow the TrustGuard policy: `block` → denied, PII/secrets
 (`transform`) → allowed with a warning unless `transform_action` is `deny`,
 `report` → allowed with a notice. A finding on `postToolUse` cannot undo a tool
 that already ran; it is injected as context flagging the result as untrusted.
-Attribution uses the Cursor `user_email` as `consumer_id` when Cursor provides it,
-unless `consumer_id` / `TRUSTGUARD_CONSUMER_ID` is set.
+Attribution sends the Cursor `user_email` as `attributes.user.email` when Cursor
+provides it; `consumer_id` is sent only when `consumer_id` /
+`TRUSTGUARD_CONSUMER_ID` is set.
 
 ---
 

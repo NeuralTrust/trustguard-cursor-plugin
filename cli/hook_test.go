@@ -551,6 +551,24 @@ func TestEmptyPromptSkipsEvaluation(t *testing.T) {
 	}
 }
 
+func TestConsumerIDOmittedWithoutConfig(t *testing.T) {
+	srv, captured := stubGuard(t, EvaluateResponse{Status: "allow"})
+	cfg := testConfig(srv.URL)
+	cfg.ConsumerID = ""
+	_ = invokeHook(t, cfg, map[string]any{
+		"hook_event_name": "beforeSubmitPrompt",
+		"prompt":          "hello",
+		"conversation_id": "conv-1",
+		"user_email":      "alice@acme.com",
+	})
+	if _, ok := (*captured)["consumer_id"]; ok {
+		t.Fatalf("consumer_id must be omitted without config, got %v", (*captured)["consumer_id"])
+	}
+	if got := userEmailAttr(t, captured); got != "alice@acme.com" {
+		t.Fatalf("account email must still travel in attributes.user.email, got %q", got)
+	}
+}
+
 func userEmailAttr(t *testing.T, captured *map[string]any) string {
 	t.Helper()
 	attrs, _ := (*captured)["attributes"].(map[string]any)
