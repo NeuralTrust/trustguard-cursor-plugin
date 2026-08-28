@@ -2,7 +2,7 @@
   "name": "trustguard",
   "displayName": "NeuralTrust",
   "description": "NeuralTrust for Cursor: TrustGuard AI firewall (hooks) plus TrustGate MCP Gateway tools. One plugin for security and aggregated MCP access.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "author": {
     "name": "NeuralTrust"
   },
