@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 )
 
 // hookInput is the stdin payload Cursor sends to every hook. Fields are a
@@ -153,25 +154,99 @@ func buildEvaluateRequest(cfg Config, in hookInput, hookAttrs map[string]any) (E
 		return base, true
 
 	case "postToolUse":
-		if strings.TrimSpace(in.ToolOutput) == "" {
+		blocks := clipBlocks(toolOutputBlocks(in.ToolOutput), cfg.MaxContentBytes)
+		if allBlank(blocks) {
 			return base, false
 		}
 		// A tool result is model-bound external context — file contents, MCP
 		// responses, command output — so it is scored as an MCP tool result
 		// (direction=output) where indirect_prompt_injection and DLP apply.
+		content := make([]any, 0, len(blocks))
+		for _, b := range blocks {
+			content = append(content, map[string]any{"type": "text", "text": b})
+		}
 		base.Direction = "output"
 		base.Protocol = "mcp"
 		base.Payload = map[string]any{
 			"jsonrpc": "2.0",
 			"id":      1,
-			"result": map[string]any{
-				"content": []any{map[string]any{"type": "text", "text": clip(in.ToolOutput, cfg.MaxContentBytes)}},
-			},
+			"result":  map[string]any{"content": content},
 		}
 		stampToolName(base.Attributes, mcpCallName(in.ToolName))
 		return base, true
 	}
 	return base, false
+}
+
+// toolOutputBlocks splits the JSON-stringified tool result into the text blocks
+// the model saw, so each is scored as TrustGate scores an MCP result; any other
+// shape stays the original string as one block.
+func toolOutputBlocks(output string) []string {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return nil
+	}
+	raw := json.RawMessage(trimmed)
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return []string{asString}
+	}
+	if texts := textBlocks(raw); len(texts) > 0 {
+		return texts
+	}
+	var result struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &result); err == nil && len(result.Content) > 0 {
+		if texts := textBlocks(result.Content); len(texts) > 0 {
+			return texts
+		}
+	}
+	return []string{output}
+}
+
+// textBlocks returns the texts of an MCP content array; non-text blocks are skipped.
+func textBlocks(raw json.RawMessage) []string {
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return nil
+	}
+	var texts []string
+	for _, b := range blocks {
+		if b.Type == "" {
+			return nil
+		}
+		if b.Type == "text" {
+			texts = append(texts, b.Text)
+		}
+	}
+	return texts
+}
+
+// clipBlocks applies one byte budget across all blocks, cutting the last one kept.
+func clipBlocks(blocks []string, budget int) []string {
+	var out []string
+	for _, b := range blocks {
+		if budget <= 0 {
+			break
+		}
+		b = clip(b, budget)
+		budget -= len(b)
+		out = append(out, b)
+	}
+	return out
+}
+
+func allBlank(blocks []string) bool {
+	for _, b := range blocks {
+		if strings.TrimSpace(b) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeToolArguments(in hookInput) any {
@@ -391,9 +466,13 @@ func mcpCallName(hookToolName string) string {
 	return hookToolName
 }
 
+// clip cuts s to at most n bytes without splitting a UTF-8 rune.
 func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
 	}
 	return s[:n]
 }
