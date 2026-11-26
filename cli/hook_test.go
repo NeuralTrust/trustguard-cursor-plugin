@@ -120,7 +120,7 @@ func TestPromptAllow(t *testing.T) {
 	}
 }
 
-func TestPreToolUseShellSentAsToolsCall(t *testing.T) {
+func TestPreToolUseShellUsesMinimalPayload(t *testing.T) {
 	srv, captured := stubGuard(t, blockResponse("code_injection", "rt-code-san"))
 	out := invokeHook(t, testConfig(srv.URL), map[string]any{
 		"hook_event_name": "preToolUse",
@@ -131,24 +131,16 @@ func TestPreToolUseShellSentAsToolsCall(t *testing.T) {
 	if out.Permission != permissionDeny {
 		t.Fatalf("expected deny, got %+v", out)
 	}
-	if (*captured)["protocol"] != "mcp" {
-		t.Fatalf("expected protocol mcp, got %v", (*captured)["protocol"])
+	if (*captured)["protocol"] != "all" {
+		t.Fatalf("expected protocol all, got %v", (*captured)["protocol"])
 	}
 	payload := (*captured)["payload"].(map[string]any)
-	if payload["method"] != "tools/call" {
-		t.Fatalf("expected tools/call envelope, got %v", payload)
-	}
-	params := payload["params"].(map[string]any)
-	if params["name"] != "Shell" {
-		t.Fatalf("expected params.name=Shell, got %v", params)
-	}
-	args := params["arguments"].(map[string]any)
-	if args["command"] != "rm -rf /" || args["working_directory"] != "/repo" {
-		t.Fatalf("expected the tool_input as arguments, got %v", args)
+	if payload["input"] != "rm -rf /" {
+		t.Fatalf("expected minimal input payload, got %v", payload)
 	}
 	attrs := (*captured)["attributes"].(map[string]any)
-	if _, ok := attrs["tool"]; ok {
-		t.Fatalf("tools/call must not stamp attributes.tool, got %v", attrs)
+	if attrs["tool"].(map[string]any)["name"] != "Shell" {
+		t.Fatalf("expected attributes.tool.name=Shell, got %v", attrs)
 	}
 }
 
@@ -280,6 +272,9 @@ func TestPreToolUseGateAskAnswersAsk(t *testing.T) {
 	attrs := (*captured)["attributes"].(map[string]any)
 	if attrs["source"].(map[string]any)["application"] != "cursor-plugin" {
 		t.Fatalf("expected source.application=cursor-plugin, got %v", attrs)
+	}
+	if attrs["tool"].(map[string]any)["name"] != "Shell" {
+		t.Fatalf("expected attributes.tool.name=Shell, got %v", attrs)
 	}
 }
 

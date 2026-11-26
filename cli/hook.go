@@ -109,9 +109,10 @@ func decideEvent(cfg Config, in hookInput, hookAttrs map[string]any) hookOutput 
 }
 
 // buildEvaluateRequest maps one Cursor event onto the /v1/evaluate contract.
-// Shapes follow docs/api/provider-signatures.md: chat shapes need `llm`;
-// JSON-RPC needs `mcp`. Tool-call arguments and results are only analyzed on
-// the MCP path, hence the tools/call and tool-result envelopes.
+// Shapes follow docs/api/provider-signatures.md: `all` only accepts
+// {"input": …}; chat shapes need `llm`; JSON-RPC needs `mcp`. Tool-call
+// arguments and results are only analyzed on the MCP path, hence the
+// tools/call and tool-result envelopes.
 func buildEvaluateRequest(cfg Config, in hookInput, hookAttrs map[string]any) (EvaluateRequest, bool) {
 	base := EvaluateRequest{
 		Direction:  "input",
@@ -140,8 +141,15 @@ func buildEvaluateRequest(cfg Config, in hookInput, hookAttrs map[string]any) (E
 		if in.ToolName == "" {
 			return base, false
 		}
-		// Every tool, Shell included, goes as a tools/call: as plain input a
-		// command would be scored as a user prompt, not as tool arguments.
+		// code_sanitation scores a raw command line, so Shell keeps the `all`
+		// shape it had as its own event; every other tool is scored as the
+		// tools/call it already is.
+		if cmd := shellCommand(in); cmd != "" {
+			base.Protocol = "all"
+			base.Payload = map[string]any{"input": cmd}
+			stampToolName(base.Attributes, in.ToolName)
+			return base, true
+		}
 		base.Protocol = "mcp"
 		base.Payload = map[string]any{
 			"jsonrpc": "2.0",
@@ -279,6 +287,21 @@ func allBlank(blocks []json.RawMessage) bool {
 		}
 	}
 	return true
+}
+
+// shellCommand returns the command line of a Shell tool call, and "" for every
+// other tool or a payload that does not carry one.
+func shellCommand(in hookInput) string {
+	if in.ToolName != "Shell" {
+		return ""
+	}
+	var input struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(in.ToolInput, &input); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(input.Command)
 }
 
 func decodeToolArguments(in hookInput) any {
