@@ -375,12 +375,22 @@ func stampToolName(attrs map[string]any, toolName string) {
 	attrs["tool"] = map[string]any{"name": toolName}
 }
 
+// hookContentFields are the stdin fields that hold what an event is evaluated
+// on: the prompt, the tool's arguments (under either spelling), the tool's output. The payload already carries them, the output clipped to
+// MaxContentBytes. A second copy under attributes.cursor would be stored as
+// sent, unclipped, and no detector reads attributes, so DLP would never mask it.
+var hookContentFields = []string{"prompt", "tool_input", "arguments", "tool_output"}
+
 // hookAttributes is the stdin JSON as a map so every field Cursor sent
-// (including ones this binary does not decode) travels in attributes.cursor.
+// (including ones this binary does not decode) travels in attributes.cursor,
+// except the content fields, which travel in the payload.
 func hookAttributes(raw json.RawMessage) map[string]any {
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
 		return map[string]any{}
+	}
+	for _, field := range hookContentFields {
+		delete(m, field)
 	}
 	return m
 }

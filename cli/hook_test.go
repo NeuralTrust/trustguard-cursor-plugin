@@ -94,8 +94,11 @@ func TestPromptBlockAnswersContinueFalse(t *testing.T) {
 		t.Fatalf("expected attributes.user.email=alice@acme.com, got %q", got)
 	}
 	cursor := hookAttr(t, captured, "cursor")
-	if cursor["hook_event_name"] != "beforeSubmitPrompt" || cursor["prompt"] == nil {
-		t.Fatalf("expected full hook JSON in attributes.cursor, got %v", cursor)
+	if cursor["hook_event_name"] != "beforeSubmitPrompt" || cursor["conversation_id"] != "conv-1" {
+		t.Fatalf("expected the hook JSON in attributes.cursor, got %v", cursor)
+	}
+	if _, ok := cursor["prompt"]; ok {
+		t.Fatalf("the prompt must travel in the payload only, got %v", cursor)
 	}
 	payload := (*captured)["payload"].(map[string]any)
 	if _, hasMessages := payload["messages"]; !hasMessages {
@@ -596,6 +599,40 @@ func TestEvaluateStampsFullHookJSON(t *testing.T) {
 	atts, _ := cursor["attachments"].([]any)
 	if len(atts) != 1 {
 		t.Fatalf("expected attachments in attributes.cursor, got %v", cursor["attachments"])
+	}
+	if _, ok := cursor["prompt"]; ok {
+		t.Fatalf("attributes.cursor must not repeat the prompt the payload carries, got %v", cursor)
+	}
+}
+
+// The content an event is evaluated on travels once, in the payload, under
+// either spelling of the arguments: a copy under attributes is stored unclipped
+// and never masked by DLP.
+func TestEvaluateKeepsToolContentOutOfHookAttributes(t *testing.T) {
+	cases := map[string]map[string]any{
+		"preToolUse tool_input": {"hook_event_name": "preToolUse", "tool_name": "Shell", "tool_input": map[string]any{"command": "echo 555-0100"}},
+		"preToolUse arguments":  {"hook_event_name": "preToolUse", "tool_name": "Shell", "arguments": map[string]any{"command": "echo 555-0100"}},
+		"postToolUse":           {"hook_event_name": "postToolUse", "tool_name": "Shell", "tool_input": map[string]any{"command": "echo 555-0100"}, "tool_output": "555-0100"},
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			input["conversation_id"] = "conv-1"
+			input["generation_id"] = "gen-9"
+			srv, captured := stubGuard(t, EvaluateResponse{Status: "allow"})
+			_ = invokeHook(t, testConfig(srv.URL), input)
+			if (*captured)["payload"] == nil {
+				t.Fatalf("expected an evaluated payload, got %v", *captured)
+			}
+			cursor := hookAttr(t, captured, "cursor")
+			for _, field := range hookContentFields {
+				if _, ok := cursor[field]; ok {
+					t.Fatalf("attributes.cursor must not carry %s, got %v", field, cursor)
+				}
+			}
+			if cursor["tool_name"] != "Shell" || cursor["generation_id"] != "gen-9" {
+				t.Fatalf("attributes.cursor must keep the event's metadata, got %v", cursor)
+			}
+		})
 	}
 }
 
