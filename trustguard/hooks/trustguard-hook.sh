@@ -12,17 +12,17 @@
 # workflow on every push to main.
 set -u
 
-VERSION="0.1.7"
+VERSION="0.1.8"
 BASE_URL="${TRUSTGUARD_CURSOR_DOWNLOAD_BASE:-https://github.com/NeuralTrust/trustguard-cursor-plugin/releases/download}"
 BIN_DIR="${TRUSTGUARD_CURSOR_BIN_DIR:-$HOME/.trustguard/bin}"
 
 # Per-platform SHA-256 of the release binaries (filled per release).
-SHA256_darwin_amd64="949a939930660ba5534ba4e86e2f04f054474c85d15339b94ef023aabe064a69"
-SHA256_darwin_arm64="6464acb6c9cd981b696dd9b939e12bb649da9ec741c29734ab68e08c874404eb"
-SHA256_linux_amd64="01103e74f8c7d6e934cae968e4e15c8113f0b367c01e309ac7e2152b5006107e"
-SHA256_linux_arm64="83403daf5ed7f81a6611dda54ad056284f880e5b1e93f4d1cd110c33ede9fa42"
-SHA256_windows_amd64="c7f5cd3e365adfd761869ad6056e253bd26a77660b31f8c171fcbbc82d25cbd1"
-SHA256_windows_arm64="687f18b69c03d975c63e0bd91916f454da6f66bd17dff7079ed496b06e3dff3c"
+SHA256_darwin_amd64="e5edc797af3d916dfb576ad611148e56312ab6e48783a40856075858b82ed17a"
+SHA256_darwin_arm64="32d842f0386555100a939abb411e885bd474ddbfdd4bf428785a1944df620bee"
+SHA256_linux_amd64="3d1897b3dfaa0a4c95d4ef9265975b3507816eda2070802d351fd40e4310b99f"
+SHA256_linux_arm64="c337a4a3156cc5f43394b5d1b7b2de87473865ca81930511145de0cd4fa8db20"
+SHA256_windows_amd64="a59af91d603023b5b9ef576e1a376428706d78352791bbe2d5051ed2bea4ce45"
+SHA256_windows_arm64="6d9ae695318dfce4c851045b14a01e91cff3ea43b82a7883d255178e2e264181"
 
 fail_open() {
     echo "trustguard-cursor bootstrap: $1 — allowing without evaluation" >&2
